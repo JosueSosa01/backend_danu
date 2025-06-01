@@ -22,17 +22,40 @@ def cargar_datos():
 
     if 'zona' not in df.columns:
         zona_map = {
-            "Baja California": "Noroeste", "Baja California Sur": "Noroeste",
-            "Chihuahua": "Norte", "Sonora": "Noroeste", "Sinaloa": "Noroeste",
-            "Durango": "Norte", "Coahuila": "Norte", "Nuevo León": "Norte", "Tamaulipas": "Norte",
-            "Zacatecas": "Norte", "San Luis Potosí": "Centro", "Aguascalientes": "Centro",
-            "Jalisco": "Centro", "Guanajuato": "Centro", "Querétaro": "Centro", 
-            "Ciudad de México": "Centro", "Edo. de México": "Centro", "Hidalgo": "Centro",
-            "Morelos": "Centro", "Tlaxcala": "Centro", "Puebla": "Centro",
-            "Michoacán": "Occidente", "Colima": "Occidente", "Nayarit": "Occidente",
-            "Veracruz": "Golfo", "Tabasco": "Golfo", "Campeche": "Sureste",
-            "Yucatán": "Sureste", "Quintana Roo": "Sureste", "Oaxaca": "Sur",
-            "Chiapas": "Sur", "Guerrero": "Sur"
+         # NORTE
+            "Baja California": "Norte",
+            "Baja California Sur": "Norte",
+            "Sonora": "Norte",
+            "Sinaloa": "Norte",
+            "Chihuahua": "Norte",
+            "Coahuila": "Norte",
+            "Nuevo León": "Norte",
+            "Tamaulipas": "Norte",
+            "Durango": "Norte",
+            "Zacatecas": "Norte",
+            "SLP": "Norte",
+            "Aguascalientes": "Norte",
+        
+            # CENTRO
+            "Jalisco": "Centro",
+            "Colima": "Centro",
+            "Guanajuato": "Centro",
+            "Queretaro": "Centro",
+            "Hidalgo": "Centro",
+            "Ciudad de México": "Centro",
+            "Morelos": "Centro",
+            "Tlaxcala": "Centro",
+            "Puebla": "Centro",
+            "Veracruz": "Centro",
+        
+            # SUR
+            "Guerrero": "Sur",
+            "Oaxaca": "Sur",
+            "Chiapas": "Sur",
+            "Tabasco": "Sur",
+            "Campeche": "Sur",
+            "Yucatán": "Sur",
+            "Quintana Roo": "Sur"
         }
         df["zona"] = df["estado_del_cliente"].map(zona_map).fillna("Otro")
 
