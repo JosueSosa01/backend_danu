@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 import pandas as pd
 
 app = FastAPI()
@@ -12,65 +13,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Procesamiento de datos
+# Función para cargar y preparar los datos
 def cargar_datos():
     df = pd.read_csv("Nacional-BD.csv")
     df_tabla = pd.read_csv("Tabla-Nacional.csv")
-    # Generar columnas derivadas si no existen
+
     if 'dias' not in df.columns:
-        df["dias"] = pd.to_datetime(df["fecha_entrega_al_cliente"]).dt.day_name()
+        df["fecha_entrega_al_cliente"] = pd.to_datetime(df["fecha_entrega_al_cliente"])
+        df["dias"] = df["fecha_entrega_al_cliente"].dt.day_name()
 
     if 'zona' not in df.columns:
         zona_map = {
-         # NORTE
-            "Baja California": "Norte",
-            "Baja California Sur": "Norte",
-            "Sonora": "Norte",
-            "Sinaloa": "Norte",
-            "Chihuahua": "Norte",
-            "Coahuila": "Norte",
-            "Nuevo León": "Norte",
-            "Tamaulipas": "Norte",
-            "Durango": "Norte",
-            "Zacatecas": "Norte",
-            "SLP": "Norte",
-            "Aguascalientes": "Norte",
-        
-            # CENTRO
-            "Jalisco": "Centro",
-            "Colima": "Centro",
-            "Guanajuato": "Centro",
-            "Queretaro": "Centro",
-            "Hidalgo": "Centro",
-            "Ciudad de México": "Centro",
-            "Morelos": "Centro",
-            "Tlaxcala": "Centro",
-            "Puebla": "Centro",
-            "Veracruz": "Centro",
-        
-            # SUR
-            "Guerrero": "Sur",
-            "Oaxaca": "Sur",
-            "Chiapas": "Sur",
-            "Tabasco": "Sur",
-            "Campeche": "Sur",
-            "Yucatán": "Sur",
-            "Quintana Roo": "Sur"
+            "Baja California": "Norte", "Baja California Sur": "Norte", "Sonora": "Norte",
+            "Sinaloa": "Norte", "Chihuahua": "Norte", "Coahuila": "Norte",
+            "Nuevo León": "Norte", "Tamaulipas": "Norte", "Durango": "Norte",
+            "Zacatecas": "Norte", "SLP": "Norte", "Aguascalientes": "Norte",
+            "Jalisco": "Centro", "Colima": "Centro", "Guanajuato": "Centro",
+            "Queretaro": "Centro", "Hidalgo": "Centro", "Ciudad de México": "Centro",
+            "Morelos": "Centro", "Tlaxcala": "Centro", "Puebla": "Centro",
+            "Veracruz": "Centro", "Guerrero": "Sur", "Oaxaca": "Sur", "Chiapas": "Sur",
+            "Tabasco": "Sur", "Campeche": "Sur", "Yucatán": "Sur", "Quintana Roo": "Sur"
         }
         df["zona"] = df["estado_del_cliente"].map(zona_map).fillna("Otro")
 
     return df, df_tabla
 
+# 🔁 Reutilizable: aplica filtros
+def aplicar_filtros(df, fecha_inicio, fecha_fin, estados):
+    if fecha_inicio and fecha_fin:
+        df['fecha_entrega_al_cliente'] = pd.to_datetime(df['fecha_entrega_al_cliente'])
+        df = df[(df['fecha_entrega_al_cliente'] >= fecha_inicio) & (df['fecha_entrega_al_cliente'] <= fecha_fin)]
+    if estados:
+        lista_estados = estados.split(',')
+        df = df[df['estado_del_cliente'].isin(lista_estados)]
+    return df
+
 @app.get("/api/top_productos")
-def top_productos():
+def top_productos(
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    estados: Optional[str] = Query(None)
+):
     df, _ = cargar_datos()
+    df = aplicar_filtros(df, fecha_inicio, fecha_fin, estados)
+
     top = df["categoria_nombre_producto"].value_counts().nlargest(5).reset_index()
     top.columns = ["producto", "cantidad"]
     return top.to_dict(orient="records")
 
 @app.get("/api/por_dia")
-def productos_por_dia():
+def productos_por_dia(
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    estados: Optional[str] = Query(None)
+):
     df, _ = cargar_datos()
+    df = aplicar_filtros(df, fecha_inicio, fecha_fin, estados)
+
     resumen = df["dias"].value_counts().reindex(
         ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     ).fillna(0).reset_index()
@@ -78,19 +77,36 @@ def productos_por_dia():
     return resumen.to_dict(orient="records")
 
 @app.get("/api/por_zona")
-def por_zona():
+def por_zona(
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None)
+):
     df, _ = cargar_datos()
+    df = aplicar_filtros(df, fecha_inicio, fecha_fin, None)
+
     resumen = df["zona"].value_counts(normalize=True).reset_index()
     resumen.columns = ["zona", "porcentaje"]
     resumen["porcentaje"] = (resumen["porcentaje"] * 100).round(1)
     return resumen.to_dict(orient="records")
 
 @app.get("/api/resumen_tabla")
-def resumen_tabla():
+def resumen_tabla(
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    estados: Optional[str] = Query(None)
+):
     _, tabla = cargar_datos()
 
     tabla['fecha_orden'] = pd.to_datetime(tabla['fecha_orden'], format='%d/%m/%y')
     tabla['fecha_entrega_al_cliente'] = pd.to_datetime(tabla['fecha_entrega_al_cliente'], format='%d/%m/%y')
+
+    if fecha_inicio and fecha_fin:
+        tabla = tabla[(tabla['fecha_entrega_al_cliente'] >= fecha_inicio) & (tabla['fecha_entrega_al_cliente'] <= fecha_fin)]
+
+    if estados:
+        lista_estados = estados.split(',')
+        tabla = tabla[tabla['estado_del_cliente'].isin(lista_estados)]
+
     tabla['tiempo_entrega_dias'] = (tabla['fecha_entrega_al_cliente'] - tabla['fecha_orden']).dt.days
 
     resumen = tabla.groupby('estado_del_cliente').agg(
