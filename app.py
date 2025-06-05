@@ -1,150 +1,77 @@
-from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from fastapi import FastAPI
 import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+# Inicializa la app
+app = FastAPI(title="Dashboard Nuevo León")
 
-# Habilitar CORS
+# Permitir conexión desde el frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Reemplaza con tu dominio si lo necesitas
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Función para cargar y preparar los datos
-def cargar_datos():
-    df = pd.read_csv("Nacional-BD.csv")
-    df_tabla = pd.read_csv("Tabla-Nacional.csv")
+# ========== Carga de Datos ==========
+# Asegúrate que los CSV estén en el mismo directorio o ajusta la ruta
+df_rutas = pd.read_csv("rutas.csv")
+df_emisiones = pd.read_csv("emisiones.csv")
+df_gasolina = pd.read_csv("gasolina.csv")
 
-    if 'dias' not in df.columns:
-        df["fecha_entrega_al_cliente"] = pd.to_datetime(df["fecha_entrega_al_cliente"])
-        df["dias"] = df["fecha_entrega_al_cliente"].dt.day_name()
+# Filtrar solo datos de Nuevo León
+df_rutas_nl = df_rutas[df_rutas["estado"] == "Nuevo León"]
+df_emisiones_nl = df_emisiones[df_emisiones["estado"] == "Nuevo León"]
+df_gasolina_nl = df_gasolina[df_gasolina["estado"] == "Nuevo León"]
 
-    if 'zona' not in df.columns:
-        zona_map = {
-            "Baja California": "Norte", "Baja California Sur": "Norte", "Sonora": "Norte",
-            "Sinaloa": "Norte", "Chihuahua": "Norte", "Coahuila": "Norte",
-            "Nuevo León": "Norte", "Tamaulipas": "Norte", "Durango": "Norte",
-            "Zacatecas": "Norte", "SLP": "Norte", "Aguascalientes": "Norte",
-            "Jalisco": "Centro", "Colima": "Centro", "Guanajuato": "Centro",
-            "Queretaro": "Centro", "Hidalgo": "Centro", "Ciudad de México": "Centro",
-            "Morelos": "Centro", "Tlaxcala": "Centro", "Puebla": "Centro",
-            "Veracruz": "Centro", "Guerrero": "Sur", "Oaxaca": "Sur", "Chiapas": "Sur",
-            "Tabasco": "Sur", "Campeche": "Sur", "Yucatán": "Sur", "Quintana Roo": "Sur"
-        }
-        df["zona"] = df["estado_del_cliente"].map(zona_map).fillna("Otro")
+# ========== Endpoint: KPIs ==========
+@app.get("/kpis")
+def get_kpis():
+    total_km = df_rutas_nl["km"].sum()
+    km_reducidos = df_rutas_nl["km_reducidos"].sum()
 
-    return df, df_tabla
+    emisiones = df_rutas_nl["co2_emitido"].sum()
+    co2_ev = df_rutas_nl["co2_ev"].sum()
 
-# 🔁 Reutilizable: aplica filtros
-def aplicar_filtros(df, fecha_inicio, fecha_fin, estados):
-    if fecha_inicio and fecha_fin:
-        df['fecha_entrega_al_cliente'] = pd.to_datetime(df['fecha_entrega_al_cliente'])
-        df = df[(df['fecha_entrega_al_cliente'] >= fecha_inicio) & (df['fecha_entrega_al_cliente'] <= fecha_fin)]
-    if estados:
-        lista_estados = estados.split(',')
-        df = df[df['estado_del_cliente'].isin(lista_estados)]
-    return df
+    gasto_gasolina = df_rutas_nl["gasto_gasolina"].sum()
+    ahorro_gasolina = df_rutas_nl["ahorro_gasolina"].sum()
 
-@app.get("/api/top_productos")
-def top_productos(
-    fecha_inicio: Optional[str] = Query(None),
-    fecha_fin: Optional[str] = Query(None),
-    estados: Optional[str] = Query(None)
-):
-    df, _ = cargar_datos()
-    df = aplicar_filtros(df, fecha_inicio, fecha_fin, estados)
+    costo_prom = df_rutas_nl["costo_prom_ruta"].mean()
+    ahorro_ruta = df_rutas_nl["ahorro_ruta"].mean()
 
-    top = df["categoria_nombre_producto"].value_counts().nlargest(5).reset_index()
-    top.columns = ["producto", "cantidad"]
-    return top.to_dict(orient="records")
+    total_rutas = df_rutas_nl["ruta_id"].nunique()
+    rutas_menos = df_rutas_nl["rutas_menos"].sum()
 
-@app.get("/api/por_dia")
-def productos_por_dia(
-    fecha_inicio: Optional[str] = Query(None),
-    fecha_fin: Optional[str] = Query(None),
-    estados: Optional[str] = Query(None)
-):
-    df, _ = cargar_datos()
-    df = aplicar_filtros(df, fecha_inicio, fecha_fin, estados)
+    return {
+        "km_recorridos": f"{total_km:,.0f} km",
+        "km_reducidos": f"{km_reducidos:,.0f} km",
+        "co2_emitido": f"{emisiones:,.0f} kg",
+        "co2_ev": f"{co2_ev:,.0f} kg",
+        "gasto_gasolina": f"${gasto_gasolina:,.0f}",
+        "ahorro_gasolina": f"${ahorro_gasolina:,.0f}",
+        "costo_prom_ruta": f"${costo_prom:,.2f}",
+        "ahorro_ruta": f"${ahorro_ruta:,.2f}",
+        "total_rutas": int(total_rutas),
+        "rutas_menos": int(rutas_menos)
+    }
 
-    resumen = df["dias"].value_counts().reindex(
-        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    ).fillna(0).reset_index()
-    resumen.columns = ["dia", "productos_entregados"]
-    return resumen.to_dict(orient="records")
+# ========== Endpoint: Gráfica CO₂ por mes ==========
+@app.get("/charts/co2")
+def chart_emisiones():
+    result = df_emisiones_nl.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
+    return result.to_dict(orient="records")
 
-@app.get("/api/por_zona")
-def por_zona(
-    fecha_inicio: Optional[str] = Query(None),
-    fecha_fin: Optional[str] = Query(None)
-):
-    df, _ = cargar_datos()
-    df = aplicar_filtros(df, fecha_inicio, fecha_fin, None)
+# ========== Endpoint: Costo de gasolina por centro ==========
+@app.get("/charts/gasolina")
+def chart_gasolina():
+    result = df_gasolina_nl.groupby(["mes", "tipo_centro"])["costo_gasolina"].sum().reset_index()
+    return result.to_dict(orient="records")
 
-    resumen = df["zona"].value_counts(normalize=True).reset_index()
-    resumen.columns = ["zona", "porcentaje"]
-    resumen["porcentaje"] = (resumen["porcentaje"] * 100).round(1)
-    return resumen.to_dict(orient="records")
-
-@app.get("/api/resumen_tabla")
-def resumen_tabla(
-    fecha_inicio: Optional[str] = Query(None),
-    fecha_fin: Optional[str] = Query(None),
-    estados: Optional[str] = Query(None)
-):
-    _, tabla = cargar_datos()
-
-    tabla['fecha_orden'] = pd.to_datetime(tabla['fecha_orden'], format='%d/%m/%y')
-    tabla['fecha_entrega_al_cliente'] = pd.to_datetime(tabla['fecha_entrega_al_cliente'], format='%d/%m/%y')
-
-    if fecha_inicio and fecha_fin:
-        tabla = tabla[(tabla['fecha_entrega_al_cliente'] >= fecha_inicio) & (tabla['fecha_entrega_al_cliente'] <= fecha_fin)]
-
-    if estados:
-        lista_estados = estados.split(',')
-        tabla = tabla[tabla['estado_del_cliente'].isin(lista_estados)]
-
-    tabla['tiempo_entrega_dias'] = (tabla['fecha_entrega_al_cliente'] - tabla['fecha_orden']).dt.days
-
-    resumen = tabla.groupby('estado_del_cliente').agg(
-        Ordenes=('order_id', 'count'),
-        TiempoPromedio=('tiempo_entrega_dias', 'mean'),
-        EntregasATiempo=('estado_de_puntualidad', lambda x: (x == 'A tiempo').sum())
-    ).reset_index()
-
-    resumen['PorcentajeATiempo'] = (resumen['EntregasATiempo'] / resumen['Ordenes']) * 100
-
-    def clasificar(p):
-        if p >= 95:
-            return 'Excellent'
-        elif p >= 90:
-            return 'Good'
-        else:
-            return 'Average'
-
-    resumen['EstadoDesempeño'] = resumen['PorcentajeATiempo'].apply(clasificar)
-    resumen['Tiempo promedio'] = resumen['TiempoPromedio'].round(1).astype(str) + ' days'
-    resumen['Porcentaje a tiempo'] = resumen['PorcentajeATiempo'].round(2).astype(str) + '%'
-
-    tabla_final = resumen[[
-        'estado_del_cliente',
-        'Ordenes',
-        'Tiempo promedio',
-        'Porcentaje a tiempo',
-        'EstadoDesempeño'
-    ]]
-
-    return tabla_final.to_dict(orient="records")
-
-@app.get("/api/resumen")
-def resumen():
-    df, _ = cargar_datos()
-    resumen_df = df.groupby("estado_del_cliente")["importe_a_pagar"].sum().reset_index()
-    return resumen_df.to_dict(orient="records")
-
-@app.get("/healthz")
-def health():
-    return {"status": "ok"}
+# ========== Endpoint: Distribución de distancia recorrida ==========
+@app.get("/charts/distancia")
+def chart_distancia():
+    df_hist = df_rutas_nl["km"].value_counts(bins=20).sort_index().reset_index()
+    df_hist.columns = ["rango_km", "frecuencia"]
+    df_hist["rango_km"] = df_hist["rango_km"].astype(str)
+    return df_hist.to_dict(orient="records")
