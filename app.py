@@ -1,77 +1,118 @@
-from fastapi import FastAPI
-import pandas as pd
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
+from typing import Optional
 
-# Inicializa la app
 app = FastAPI(title="Dashboard Nuevo León")
 
-# Permitir conexión desde el frontend
+# CORS para Angular
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Reemplaza con tu dominio si lo necesitas
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ========== Carga de Datos ==========
-# Asegúrate que los CSV estén en el mismo directorio o ajusta la ruta
-df_rutas = pd.read_csv("rutas.csv")
-df_emisiones = pd.read_csv("emisiones.csv")
-df_gasolina = pd.read_csv("gasolina.csv")
+# ========== FUNCIONES ==========
+def cargar_df(archivo, tipo_centro, semestre):
+    df = pd.read_csv(archivo)
+    df["tipo_centro"] = tipo_centro
+    df["semestre"] = semestre
+    return df
 
-# Filtrar solo datos de Nuevo León
-df_rutas_nl = df_rutas[df_rutas["estado"] == "Nuevo León"]
-df_emisiones_nl = df_emisiones[df_emisiones["estado"] == "Nuevo León"]
-df_gasolina_nl = df_gasolina[df_gasolina["estado"] == "Nuevo León"]
+# ========== CARGAR ARCHIVOS REALES ==========
+df_nuevos_s1 = cargar_df("costos_nuevos_S1.csv", "Nuevos", "Semestre 1")
+df_viejos_s1 = cargar_df("costos_viejos_S1.csv", "Viejos", "Semestre 1")
+df_nuevos_s2 = cargar_df("Costo_Gasolina_nuevos_S2.csv", "Nuevos", "Semestre 2")
+df_viejos_s2 = cargar_df("Costo_Gasolina_viejos_S2.csv", "Viejos", "Semestre 2")
 
-# ========== Endpoint: KPIs ==========
+# ========== UNIR TODO ==========
+df_costos = pd.concat([df_nuevos_s1, df_viejos_s1, df_nuevos_s2, df_viejos_s2], ignore_index=True)
+
+# Filtrar por estado = "Nuevo León"
+df_costos = df_costos[df_costos["estado"] == "Nuevo León"]
+
+# ========== ENDPOINT DE KPIS ==========
 @app.get("/kpis")
-def get_kpis():
-    total_km = df_rutas_nl["km"].sum()
-    km_reducidos = df_rutas_nl["km_reducidos"].sum()
+def get_kpis(
+    semestre: Optional[str] = Query(None),
+    tipo_centro: Optional[str] = Query(None)
+):
+    df = df_costos.copy()
 
-    emisiones = df_rutas_nl["co2_emitido"].sum()
-    co2_ev = df_rutas_nl["co2_ev"].sum()
+    if semestre:
+        df = df[df["semestre"] == semestre]
+    if tipo_centro:
+        df = df[df["tipo_centro"] == tipo_centro]
 
-    gasto_gasolina = df_rutas_nl["gasto_gasolina"].sum()
-    ahorro_gasolina = df_rutas_nl["ahorro_gasolina"].sum()
-
-    costo_prom = df_rutas_nl["costo_prom_ruta"].mean()
-    ahorro_ruta = df_rutas_nl["ahorro_ruta"].mean()
-
-    total_rutas = df_rutas_nl["ruta_id"].nunique()
-    rutas_menos = df_rutas_nl["rutas_menos"].sum()
+    if df.empty:
+        return {"error": "No hay datos para el filtro aplicado."}
 
     return {
-        "km_recorridos": f"{total_km:,.0f} km",
-        "km_reducidos": f"{km_reducidos:,.0f} km",
-        "co2_emitido": f"{emisiones:,.0f} kg",
-        "co2_ev": f"{co2_ev:,.0f} kg",
-        "gasto_gasolina": f"${gasto_gasolina:,.0f}",
-        "ahorro_gasolina": f"${ahorro_gasolina:,.0f}",
-        "costo_prom_ruta": f"${costo_prom:,.2f}",
-        "ahorro_ruta": f"${ahorro_ruta:,.2f}",
-        "total_rutas": int(total_rutas),
-        "rutas_menos": int(rutas_menos)
+        "Kilómetros recorridos": f"{df['km_recorridos'].sum():,.0f} km",
+        "Emisiones de CO₂": f"{df['co2_emitido'].sum():,.0f} kg",
+        "Gasto estimado en gasolina": f"${df['gasto_gasolina'].sum():,.0f}",
+        "Costo promedio por ruta": f"${df['costo_promedio_ruta'].mean():,.2f}",
+        "Total de rutas": int(df.shape[0])
     }
 
-# ========== Endpoint: Gráfica CO₂ por mes ==========
+# ========== GRAFICA CO2 ==========
 @app.get("/charts/co2")
-def chart_emisiones():
-    result = df_emisiones_nl.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
-    return result.to_dict(orient="records")
+def chart_co2(
+    semestre: Optional[str] = Query(None),
+    tipo_centro: Optional[str] = Query(None)
+):
+    df = df_costos.copy()
 
-# ========== Endpoint: Costo de gasolina por centro ==========
+    if semestre:
+        df = df[df["semestre"] == semestre]
+    if tipo_centro:
+        df = df[df["tipo_centro"] == tipo_centro]
+
+    if df.empty:
+        return {"error": "No hay datos"}
+
+    agrupado = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
+    return agrupado.to_dict(orient="records")
+
+# ========== GRAFICA GASOLINA ==========
 @app.get("/charts/gasolina")
-def chart_gasolina():
-    result = df_gasolina_nl.groupby(["mes", "tipo_centro"])["costo_gasolina"].sum().reset_index()
-    return result.to_dict(orient="records")
+def chart_gasolina(
+    semestre: Optional[str] = Query(None),
+    tipo_centro: Optional[str] = Query(None)
+):
+    df = df_costos.copy()
 
-# ========== Endpoint: Distribución de distancia recorrida ==========
+    if semestre:
+        df = df[df["semestre"] == semestre]
+    if tipo_centro:
+        df = df[df["tipo_centro"] == tipo_centro]
+
+    if df.empty:
+        return {"error": "No hay datos"}
+
+    agrupado = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
+    return agrupado.to_dict(orient="records")
+
+# ========== GRAFICA DISTANCIA ==========
 @app.get("/charts/distancia")
-def chart_distancia():
-    df_hist = df_rutas_nl["km"].value_counts(bins=20).sort_index().reset_index()
-    df_hist.columns = ["rango_km", "frecuencia"]
-    df_hist["rango_km"] = df_hist["rango_km"].astype(str)
-    return df_hist.to_dict(orient="records")
+def chart_distancia(
+    semestre: Optional[str] = Query(None),
+    tipo_centro: Optional[str] = Query(None)
+):
+    df = df_costos.copy()
+
+    if semestre:
+        df = df[df["semestre"] == semestre]
+    if tipo_centro:
+        df = df[df["tipo_centro"] == tipo_centro]
+
+    if df.empty:
+        return {"error": "No hay datos"}
+
+    hist = df["km_recorridos"].value_counts(bins=20).sort_index().reset_index()
+    hist.columns = ["rango_km", "frecuencia"]
+    hist["rango_km"] = hist["rango_km"].astype(str)
+
+    return hist.to_dict(orient="records")
