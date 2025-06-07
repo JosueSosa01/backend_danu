@@ -19,24 +19,22 @@ app.add_middleware(
 def cargar_df_s2(archivo, tipo_centro):
     df = pd.read_csv(archivo)
     df["tipo_centro"] = tipo_centro
-    df["semestre"] = "Semestre 2"
     df.rename(columns={
         "co2_emitido_kg": "co2_emitido",
         "gasto_gasolina": "gasto_gasolina",
         "distancia_km": "distancia_km"
     }, inplace=True)
-    return df[["fecha_entrega", "distancia_km", "gasto_gasolina", "co2_emitido", "tipo_centro", "semestre"]]
+    return df[["fecha_entrega", "distancia_km", "gasto_gasolina", "co2_emitido", "tipo_centro"]]
 
 def cargar_df_s1(archivo, tipo_centro):
     df = pd.read_csv(archivo)
     df["tipo_centro"] = tipo_centro
-    df["semestre"] = "Semestre 1"
     df.rename(columns={
         "emisiones_co2": "co2_emitido",
         "costo_gasolina": "gasto_gasolina",
         "distancia_km": "distancia_km"
     }, inplace=True)
-    return df[["fecha_entrega", "distancia_km", "gasto_gasolina", "co2_emitido", "tipo_centro", "semestre"]]
+    return df[["fecha_entrega", "distancia_km", "gasto_gasolina", "co2_emitido", "tipo_centro"]]
 
 # === Cargar todos los archivos CSV ===
 df_nuevos_s1 = cargar_df_s1("costos_nuevos_S1.csv", "Nuevos")
@@ -48,10 +46,17 @@ df_total = pd.concat([df_nuevos_s1, df_viejos_s1, df_nuevos_s2, df_viejos_s2], i
 
 # === Aplicar filtros ===
 def aplicar_filtros(df, semestre: Optional[str], tipo_centro: Optional[str]):
+    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], errors="coerce")
+
     if semestre:
-        df = df[df["semestre"] == semestre]
+        if semestre == "Semestre 1":
+            df = df[df["fecha_entrega"].dt.month <= 6]
+        elif semestre == "Semestre 2":
+            df = df[df["fecha_entrega"].dt.month >= 7]
+
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
+
     return df
 
 # === KPIS ===
@@ -81,10 +86,9 @@ def grafica_co2(
     try:
         df = aplicar_filtros(df_total.copy(), semestre, tipo_centro)
         df = df[df["fecha_entrega"].notnull()]
-        df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], errors="coerce")
-        df = df[df["fecha_entrega"].notnull()]
-        df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
-        resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
+        df["mes"] = df["fecha_entrega"].dt.to_period("M").dt.to_timestamp()
+        resumen = df.groupby([df["mes"], "tipo_centro"])["co2_emitido"].sum().reset_index()
+        resumen["mes"] = resumen["mes"].dt.strftime("%b %Y")
         return resumen.to_dict(orient="records")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -98,10 +102,9 @@ def grafica_gasolina(
     try:
         df = aplicar_filtros(df_total.copy(), semestre, tipo_centro)
         df = df[df["fecha_entrega"].notnull()]
-        df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], errors="coerce")
-        df = df[df["fecha_entrega"].notnull()]
-        df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
-        resumen = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
+        df["mes"] = df["fecha_entrega"].dt.to_period("M").dt.to_timestamp()
+        resumen = df.groupby([df["mes"], "tipo_centro"])["gasto_gasolina"].sum().reset_index()
+        resumen["mes"] = resumen["mes"].dt.strftime("%b %Y")
         return resumen.to_dict(orient="records")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -122,3 +125,4 @@ def grafica_distancia(
         return hist.to_dict(orient="records")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
