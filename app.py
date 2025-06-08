@@ -114,10 +114,16 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None)):
         if df.empty:
             return {"error": "Sin datos para este filtro."}
 
-        hist = df["distancia_km"].value_counts(bins=20).sort_index().reset_index()
+        # Agrupar en 10 bins legibles
+        hist = df["distancia_km"].value_counts(bins=10).sort_index().reset_index()
         hist.columns = ["rango_km", "frecuencia"]
-        hist["rango_km"] = hist["rango_km"].astype(str)
+
+        # Formato legible de los rangos: "100–300 km"
+        def formato_rango(rango):
+            return f"{round(rango.left)}–{round(rango.right)} km"
+
+        hist["rango_km"] = hist["rango_km"].apply(formato_rango)
         return hist.to_dict(orient="records")
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
