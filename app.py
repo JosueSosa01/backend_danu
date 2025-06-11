@@ -24,41 +24,32 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
     df = df.copy()
     df["tipo_centro"] = tipo
 
-    # Renombrar columnas
     df = df.rename(columns={
         "costo_gasolina": "gasto_gasolina",
         "emisiones_co2": "co2_emitido"
     })
 
-    # 🔧 Parsear fechas con formato fijo día/mes/año
     df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
-
-    # Reportar cantidad de fechas válidas
     total = len(df)
     validas = df["fecha_entrega"].notnull().sum()
     print(f"{tipo}: {validas}/{total} fechas parseadas correctamente")
 
-    # Crear columna mes
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
 
     columnas_comunes = [
         "fecha_entrega", "mes", "distancia_km", "gasto_gasolina",
         "co2_emitido", "tipo_centro", "grupo_ruta"
     ]
-
     if tipo == "Nuevos":
         columnas_comunes += ["centro", "nombre_centro"]
 
     return df[columnas_comunes].dropna(subset=["fecha_entrega"])
 
-# Aplicar estandarización
 df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
-
-# Dataset unificado
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de filtros generales (sin filtro de mes) ===
+# === Filtros ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
@@ -67,10 +58,10 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
             df = df[df["nombre_centro"] == centro]
     return df.copy()
 
-# === ENDPOINT: KPIs ===
+# === KPIs ===
 @app.get("/kpis")
 def obtener_kpis(
-    tipo_centro: Optional[str] = Query(None),
+    tipo_centro: str = Query(...),  # ✅ OBLIGATORIO
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
@@ -85,7 +76,7 @@ def obtener_kpis(
         "Total de rutas": int(len(df))
     }
 
-# === ENDPOINT: Gasto gasolina ===
+# === Gasto gasolina ===
 @app.get("/charts/gasolina")
 def grafica_gasolina(
     tipo_centro: Optional[str] = Query(None),
@@ -105,7 +96,7 @@ def grafica_gasolina(
 
     return resumen.to_dict(orient="records")
 
-# === ENDPOINT: Emisiones CO₂ ===
+# === Emisiones CO₂ ===
 @app.get("/charts/co2")
 def grafica_co2(
     tipo_centro: Optional[str] = Query(None),
@@ -118,7 +109,7 @@ def grafica_co2(
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
-# === ENDPOINT: Distribución distancia ===
+# === Distribución distancia ===
 @app.get("/charts/distancia")
 def grafica_distancia(
     tipo_centro: Optional[str] = Query(None),
@@ -145,7 +136,7 @@ def grafica_distancia(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# === ENDPOINT: Centros disponibles ===
+# === Centros disponibles ===
 @app.get("/centros")
 def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     try:
@@ -160,7 +151,6 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         return {"centros": centros}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
 
 
 
