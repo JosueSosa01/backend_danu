@@ -30,14 +30,15 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
         "emisiones_co2": "co2_emitido"
     })
 
-    # 🔧 Parseo robusto y seguro
+    # 🔧 Parsear fechas con formato fijo día/mes/año
     df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
 
-    # Reportar si se pierden fechas
+    # Reportar cantidad de fechas válidas
     total = len(df)
     validas = df["fecha_entrega"].notnull().sum()
     print(f"{tipo}: {validas}/{total} fechas parseadas correctamente")
 
+    # Crear columna mes
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
 
     columnas_comunes = [
@@ -57,17 +58,14 @@ df_viejos = estandarizar(df_viejos, "Viejos")
 # Dataset unificado
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Constante: meses válidos ===
-MESES_VALIDOS = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
-
-# === Función de filtros generales ===
+# === Función de filtros generales (sin filtro de mes) ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
     if centro and tipo_centro == "Nuevos" and "nombre_centro" in df.columns:
         if centro != "Todos":
             df = df[df["nombre_centro"] == centro]
-    return df[df["mes"].isin(MESES_VALIDOS)].copy()
+    return df.copy()
 
 # === ENDPOINT: KPIs ===
 @app.get("/kpis")
@@ -162,6 +160,7 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         return {"centros": centros}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 
 
