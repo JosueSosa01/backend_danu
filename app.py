@@ -45,7 +45,7 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de eliminación de outliers ===
+# === Función de eliminación de outliers con IQR ===
 def quitar_outliers(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
     for col in columnas:
         q1 = df[col].quantile(0.25)
@@ -60,7 +60,7 @@ def quitar_outliers(df: pd.DataFrame, columnas: list) -> pd.DataFrame:
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
-        df = quitar_outliers(df, ["distancia_km", "gasto_gasolina", "co2_emitido"])
+        df = quitar_outliers(df, ["gasto_gasolina", "distancia_km"])
     if tipo_centro == "Nuevos" and centro and centro != "Todos":
         df = df[df["nombre_centro"] == centro]
     return df
@@ -138,8 +138,8 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
 
 # === Promedios ===
 def calcular_promedios_generales():
-    df_n_sin = quitar_outliers(df_nuevos.copy(), ["distancia_km", "gasto_gasolina", "co2_emitido"])
-    df_v_sin = quitar_outliers(df_viejos.copy(), ["distancia_km", "gasto_gasolina", "co2_emitido"])
+    df_n_sin = quitar_outliers(df_nuevos.copy(), ["gasto_gasolina", "distancia_km"])
+    df_v_sin = quitar_outliers(df_viejos.copy(), ["gasto_gasolina", "distancia_km"])
 
     return {
         "distancia": {
@@ -164,4 +164,5 @@ def obtener_promedios():
         "gasto_gasolina": {k: round(v, 2) for k, v in prom["gasto_gasolina"].items()},
         "co2_emitido": {k: round(v, 2) for k, v in prom["co2_emitido"].items()}
     }
+
 
