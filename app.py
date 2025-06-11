@@ -123,8 +123,8 @@ def grafica_distancia(
         resumen = df.groupby(["distancia_centro", "nombre_centro"]).size().reset_index(name="frecuencia")
         resumen = resumen.rename(columns={"nombre_centro": "grupo"})
     else:
-        resumen = df.groupby(["distancia_centro"]).size().reset_index(name="frecuencia")
-        resumen["grupo"] = "Total"
+        resumen = df.groupby(["distancia_centro", "tipo_centro"]).size().reset_index(name="frecuencia")
+        resumen = resumen.rename(columns={"tipo_centro": "grupo"})
 
     return resumen[["distancia_centro", "grupo", "frecuencia"]].to_dict(orient="records")
 
@@ -137,3 +137,43 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     else:
         centros = []
     return {"centros": centros}
+
+# === Promedios para líneas horizontales y verticales ===
+def calcular_promedios_generales():
+    prom = {}
+
+    prom["distancia"] = {
+        "Nuevos": df_nuevos["distancia_km"].mean(),
+        "Viejos": df_viejos["distancia_km"].mean()
+    }
+
+    prom["gasto_gasolina"] = {
+        "Nuevos": df_nuevos.groupby("mes")["gasto_gasolina"].sum().mean(),
+        "Viejos": df_viejos.groupby("mes")["gasto_gasolina"].sum().mean()
+    }
+
+    prom["co2_emitido"] = {
+        "Nuevos": df_nuevos.groupby("mes")["co2_emitido"].sum().mean(),
+        "Viejos": df_viejos.groupby("mes")["co2_emitido"].sum().mean()
+    }
+
+    return prom
+
+@app.get("/charts/promedios")
+def obtener_promedios():
+    promedios = calcular_promedios_generales()
+    return {
+        "distancia": {
+            "Nuevos": round(promedios["distancia"]["Nuevos"], 2),
+            "Viejos": round(promedios["distancia"]["Viejos"], 2)
+        },
+        "gasto_gasolina": {
+            "Nuevos": round(promedios["gasto_gasolina"]["Nuevos"], 2),
+            "Viejos": round(promedios["gasto_gasolina"]["Viejos"], 2)
+        },
+        "co2_emitido": {
+            "Nuevos": round(promedios["co2_emitido"]["Nuevos"], 2),
+            "Viejos": round(promedios["co2_emitido"]["Viejos"], 2)
+        }
+    }
+
