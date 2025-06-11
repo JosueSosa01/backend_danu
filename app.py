@@ -6,7 +6,7 @@ from typing import Optional
 
 app = FastAPI(title="Dashboard Nuevo León")
 
-# Habilitar CORS
+# === CORS ===
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,11 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === Cargar archivos CSV originales ===
+# === Cargar archivos CSV ===
 df_nuevos = pd.read_csv("costos_nuevos_S1.csv")
 df_viejos = pd.read_csv("costos_viejos_S1.csv")
 
-# === Estandarizar columnas ===
+# === Estandarizar ===
 def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
     df = df.copy()
     df["tipo_centro"] = tipo
@@ -36,23 +36,27 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
 
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
 
-    columnas_comunes = [
+    # ❗ Filtrar solo si faltan columnas críticas
+    columnas_obligatorias = ["fecha_entrega", "distancia_km", "gasto_gasolina", "co2_emitido"]
+    df = df.dropna(subset=columnas_obligatorias)
+
+    columnas_finales = [
         "fecha_entrega", "mes", "distancia_km", "gasto_gasolina",
         "co2_emitido", "tipo_centro", "grupo_ruta"
     ]
     if tipo == "Nuevos":
-        columnas_comunes += ["centro", "nombre_centro"]
+        columnas_finales += ["centro", "nombre_centro"]
 
-    return df[columnas_comunes].dropna(subset=["fecha_entrega"])
+    return df[columnas_finales]
 
+# === Preparar dataset final ===
 df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# Constante de meses válidos
 MESES_VALIDOS = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
 
-# === Filtros ===
+# === Aplicar filtros ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
@@ -63,13 +67,8 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
 
 # === KPIs ===
 @app.get("/kpis")
-def obtener_kpis(
-    tipo_centro: str = Query(...),
-    centro: Optional[str] = Query("Todos")
-):
+def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("Todos")):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-
-    # ✅ Filtrar por meses válidos SOLO para KPIs
     df = df[df["mes"].isin(MESES_VALIDOS)]
 
     if df.empty:
@@ -120,7 +119,7 @@ def grafica_co2(
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
-# === Distribución distancia ===
+# === Distancia recorrida ===
 @app.get("/charts/distancia")
 def grafica_distancia(
     tipo_centro: Optional[str] = Query(None),
@@ -164,5 +163,4 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         return {"centros": centros}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
 
