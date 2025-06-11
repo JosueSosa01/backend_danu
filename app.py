@@ -27,19 +27,18 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
         "costo_gasolina": "gasto_gasolina",
         "emisiones_co2": "co2_emitido"
     })
-    
+
     df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
-    
+
     columnas = [
         "fecha_entrega", "mes", "distancia_km", "gasto_gasolina",
         "co2_emitido", "tipo_centro", "grupo_ruta"
     ]
-    
+
     if tipo == "Nuevos":
         columnas += ["centro", "nombre_centro"]
 
-    # Solo descartamos si no hay fecha válida
     return df[columnas].dropna(subset=["fecha_entrega"])
 
 df_nuevos = estandarizar(df_nuevos, "Nuevos")
@@ -63,7 +62,7 @@ def obtener_kpis(
     df = aplicar_filtros(df_total, tipo_centro, centro)
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
-    
+
     return {
         "Kilómetros recorridos": f"{df['distancia_km'].sum():,.0f} km",
         "Emisiones de CO₂": f"{df['co2_emitido'].sum():,.0f} kg",
@@ -101,11 +100,11 @@ def grafica_co2(
     df = aplicar_filtros(df_total, tipo_centro, centro)
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
-    
+
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
-# === Distribución distancia ===
+# === Distribución distancia (modificado) ===
 @app.get("/charts/distancia")
 def grafica_distancia(
     tipo_centro: Optional[str] = Query(None),
@@ -117,16 +116,17 @@ def grafica_distancia(
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
     bins = pd.cut(df["distancia_km"], bins=10)
+    df["bin"] = bins
+    df["distancia_centro"] = df["bin"].apply(lambda r: round((r.left + r.right) / 2))
+
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
-        resumen = df.groupby([bins, "nombre_centro"]).size().reset_index(name="frecuencia")
-        resumen["rango_km"] = resumen["distancia_km"].apply(lambda r: f"{round(r.left)}–{round(r.right)} km")
+        resumen = df.groupby(["distancia_centro", "nombre_centro"]).size().reset_index(name="frecuencia")
         resumen = resumen.rename(columns={"nombre_centro": "grupo"})
     else:
-        resumen = df.groupby([bins]).size().reset_index(name="frecuencia")
-        resumen["rango_km"] = resumen["distancia_km"].apply(lambda r: f"{round(r.left)}–{round(r.right)} km")
+        resumen = df.groupby(["distancia_centro"]).size().reset_index(name="frecuencia")
         resumen["grupo"] = "Total"
 
-    return resumen[["rango_km", "grupo", "frecuencia"]].to_dict(orient="records")
+    return resumen[["distancia_centro", "grupo", "frecuencia"]].to_dict(orient="records")
 
 # === Centros disponibles ===
 @app.get("/centros")
