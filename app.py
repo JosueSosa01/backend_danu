@@ -6,7 +6,7 @@ from typing import Optional
 
 app = FastAPI(title="Dashboard Nuevo León")
 
-# Habilitar CORS
+# === CORS ===
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,51 +15,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === Archivos CSV ===
+# === Cargar archivos CSV ===
 df_nuevos = pd.read_csv("costos_nuevos_S1.csv")
 df_viejos = pd.read_csv("costos_viejos_S1.csv")
 
-# === Estandarización ===
-def estandarizar(df, tipo_centro):
+# === Procesamiento base ===
+def estandarizar_nuevos(df):
     df = df.copy()
-    df["tipo_centro"] = tipo_centro
+    df["tipo_centro"] = "Nuevos"
     df.rename(columns={
-        "emisiones_co2": "co2_emitido",
         "costo_gasolina": "gasto_gasolina",
-        "distancia_km": "distancia_km"
+        "emisiones_co2": "co2_emitido"
     }, inplace=True)
-    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], errors="coerce")
+    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
-    return df[["fecha_entrega", "mes", "distancia_km", "gasto_gasolina", "co2_emitido", "tipo_centro", "grupo_ruta", "centro", "nombre_centro"]].dropna(subset=["fecha_entrega"])
+    return df[[
+        "fecha_entrega", "mes", "grupo_ruta", "distancia_km", "total_km",
+        "gasto_gasolina", "co2_emitido", "zona", "centro", "nombre_centro", "tipo_centro"
+    ]]
 
-# Unimos ambos
+def estandarizar_viejos(df):
+    df = df.copy()
+    df["tipo_centro"] = "Viejos"
+    df.rename(columns={
+        "costo_gasolina": "gasto_gasolina",
+        "emisiones_co2": "co2_emitido"
+    }, inplace=True)
+    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
+    df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
+    df["zona"] = None
+    df["centro"] = None
+    df["nombre_centro"] = None
+    return df[[
+        "fecha_entrega", "mes", "grupo_ruta", "distancia_km", "total_km",
+        "gasto_gasolina", "co2_emitido", "zona", "centro", "nombre_centro", "tipo_centro"
+    ]]
+
+# === Unir DataFrames ya estandarizados ===
 df_total = pd.concat([
-    estandarizar(df_nuevos, "Nuevos"),
-    estandarizar(df_viejos, "Viejos")
+    estandarizar_nuevos(df_nuevos),
+    estandarizar_viejos(df_viejos)
 ], ignore_index=True)
 
-MESES_SEMESTRE_1 = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
-df_total = df_total[df_total["mes"].isin(MESES_SEMESTRE_1)]
+# === Constantes ===
+MESES_VALIDOS = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
+df_total = df_total[df_total["mes"].isin(MESES_VALIDOS)]
 
-# === Aplicar filtros ===
+# === Filtros dinámicos ===
 def aplicar_filtros(df, tipo_centro=None, centro=None):
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
-    if centro:
+    if centro and "nombre_centro" in df.columns:
         df = df[df["nombre_centro"] == centro]
     return df
 
-# === KPIs ===
-@app.get("/kpis")
-def obtener_kpis(
-    tipo_centro: Optional[str] = Query(None),
-    centro: Optional[str] = Query(None)
-):
-    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+# === ENDPOINTS ===
 
+@app.get("/kpis")
+def obtener_kpis(tipo_centro: Optional[str] = None, centro: Optional[str] = None):
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
     if df.empty:
         return {"error": "No hay datos para los filtros aplicados."}
-
     return {
         "Kilómetros recorridos": f"{df['distancia_km'].sum():,.0f} km",
         "Emisiones de CO₂": f"{df['co2_emitido'].sum():,.0f} kg",
@@ -68,12 +84,8 @@ def obtener_kpis(
         "Total de rutas": int(len(df))
     }
 
-# === Gráfica CO2 ===
 @app.get("/charts/co2")
-def grafica_co2(
-    tipo_centro: Optional[str] = Query(None),
-    centro: Optional[str] = Query(None)
-):
+def grafica_co2(tipo_centro: Optional[str] = None, centro: Optional[str] = None):
     try:
         df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
         resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
@@ -81,12 +93,8 @@ def grafica_co2(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# === Gráfica gasolina ===
 @app.get("/charts/gasolina")
-def grafica_gasolina(
-    tipo_centro: Optional[str] = Query(None),
-    centro: Optional[str] = Query(None)
-):
+def grafica_gasolina(tipo_centro: Optional[str] = None, centro: Optional[str] = None):
     try:
         df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
         resumen = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
@@ -94,47 +102,35 @@ def grafica_gasolina(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# === Gráfica distancia (agrupada o desagrupada) ===
 @app.get("/charts/distancia")
 def grafica_distancia(
-    tipo_centro: Optional[str] = Query(None),
-    centro: Optional[str] = Query(None),
-    visualizacion: Optional[str] = Query("Agrupadas")  # Agrupadas o Desagrupadas
+    tipo_centro: Optional[str] = None,
+    centro: Optional[str] = None,
+    visualizacion: Optional[str] = "Agrupadas"
 ):
     try:
         df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
-
         if df.empty:
             return {"error": "Sin datos para este filtro."}
 
-        if visualizacion == "Agrupadas":
-            # Agrupar en 10 bins
-            hist = df["distancia_km"].value_counts(bins=10).sort_index().reset_index()
-            hist.columns = ["rango_km", "frecuencia"]
-
-            def formato_rango(rango):
-                return f"{round(rango.left)}–{round(rango.right)} km"
-
-            hist["rango_km"] = hist["rango_km"].apply(formato_rango)
-            return hist.to_dict(orient="records")
-        else:
-            # Desagrupadas por tipo de centro
+        if visualizacion == "Desagrupadas":
             bins = pd.cut(df["distancia_km"], bins=10)
             grouped = df.groupby([bins, "tipo_centro"]).size().unstack(fill_value=0)
-            grouped = grouped.reset_index().rename(columns={"distancia_km": "rango_km"})
-
-            def formato_rango(rango):
-                return f"{round(rango.left)}–{round(rango.right)} km"
-
-            grouped["rango_km"] = grouped["rango_km"].apply(formato_rango)
+            grouped = grouped.reset_index()
+            grouped["rango_km"] = grouped["distancia_km"].apply(lambda r: f"{round(r.left)}–{round(r.right)} km")
+            grouped = grouped.drop(columns=["distancia_km"])
             return grouped.to_dict(orient="records")
+        else:
+            hist = df["distancia_km"].value_counts(bins=10).sort_index().reset_index()
+            hist.columns = ["rango_km", "frecuencia"]
+            hist["rango_km"] = hist["rango_km"].apply(lambda r: f"{round(r.left)}–{round(r.right)} km")
+            return hist.to_dict(orient="records")
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# === Centros únicos ===
 @app.get("/centros")
-def listar_centros(tipo_centro: Optional[str] = Query(None)):
+def listar_centros(tipo_centro: Optional[str] = None):
     df = aplicar_filtros(df_total.copy(), tipo_centro)
     centros = df["nombre_centro"].dropna().unique().tolist()
     return sorted(centros)
