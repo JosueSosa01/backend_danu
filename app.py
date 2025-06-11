@@ -6,7 +6,7 @@ from typing import Optional
 
 app = FastAPI(title="Dashboard Nuevo León")
 
-# === CORS ===
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,11 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === Cargar archivos CSV ===
+# === Cargar archivos CSV originales ===
 df_nuevos = pd.read_csv("costos_nuevos_S1.csv")
 df_viejos = pd.read_csv("costos_viejos_S1.csv")
 
-# === Estandarizar ===
+# === Estandarizar columnas ===
 def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
     df = df.copy()
     df["tipo_centro"] = tipo
@@ -29,47 +29,56 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
         "emisiones_co2": "co2_emitido"
     })
 
+    # 🛠 Parseo seguro de fecha
     df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
-    total = len(df)
-    validas = df["fecha_entrega"].notnull().sum()
-    print(f"{tipo}: {validas}/{total} fechas parseadas correctamente")
 
+    # 🧮 Convertir a numérico explícito
+    for col in ["distancia_km", "gasto_gasolina", "co2_emitido"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Crear columna mes
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
 
-    # ❗ Filtrar solo si faltan columnas críticas
-    columnas_obligatorias = ["fecha_entrega", "distancia_km", "gasto_gasolina", "co2_emitido"]
-    df = df.dropna(subset=columnas_obligatorias)
+    # Mostrar log
+    total = len(df)
+    fechas_ok = df["fecha_entrega"].notnull().sum()
+    print(f"{tipo}: {fechas_ok}/{total} fechas válidas")
 
-    columnas_finales = [
+    columnas_comunes = [
         "fecha_entrega", "mes", "distancia_km", "gasto_gasolina",
         "co2_emitido", "tipo_centro", "grupo_ruta"
     ]
+
     if tipo == "Nuevos":
-        columnas_finales += ["centro", "nombre_centro"]
+        columnas_comunes += ["centro", "nombre_centro"]
 
-    return df[columnas_finales]
+    return df[columnas_comunes].dropna(subset=["fecha_entrega"])
 
-# === Preparar dataset final ===
+# Aplicar limpieza
 df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
+
+# Unificar datasets
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
+# Meses válidos para gráficos
 MESES_VALIDOS = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
 
-# === Aplicar filtros ===
+# === Filtros ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
-    if centro and tipo_centro == "Nuevos" and "nombre_centro" in df.columns:
-        if centro != "Todos":
-            df = df[df["nombre_centro"] == centro]
+    if centro and tipo_centro == "Nuevos" and centro != "Todos":
+        df = df[df["nombre_centro"] == centro]
     return df.copy()
 
 # === KPIs ===
 @app.get("/kpis")
-def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("Todos")):
+def obtener_kpis(
+    tipo_centro: str = Query(...),
+    centro: Optional[str] = Query("Todos")
+):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-    df = df[df["mes"].isin(MESES_VALIDOS)]
 
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
@@ -119,7 +128,7 @@ def grafica_co2(
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
-# === Distancia recorrida ===
+# === Distribución distancia ===
 @app.get("/charts/distancia")
 def grafica_distancia(
     tipo_centro: Optional[str] = Query(None),
@@ -145,6 +154,7 @@ def grafica_distancia(
             resumen["grupo"] = "Total"
 
         return resumen[["rango_km", "grupo", "frecuencia"]].to_dict(orient="records")
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -152,8 +162,7 @@ def grafica_distancia(
 @app.get("/centros")
 def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     try:
-        df = df_total.copy()
-        df = df[df["tipo_centro"] == tipo_centro]
+        df = df_total[df_total["tipo_centro"] == tipo_centro]
 
         if tipo_centro == "Nuevos" and "nombre_centro" in df.columns:
             centros = df["nombre_centro"].dropna().unique().tolist()
