@@ -49,6 +49,9 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
+# Constante de meses válidos
+MESES_VALIDOS = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
+
 # === Filtros ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
@@ -61,10 +64,14 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
 # === KPIs ===
 @app.get("/kpis")
 def obtener_kpis(
-    tipo_centro: str = Query(...),  # ✅ OBLIGATORIO
+    tipo_centro: str = Query(...),
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+
+    # ✅ Filtrar por meses válidos SOLO para KPIs
+    df = df[df["mes"].isin(MESES_VALIDOS)]
+
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
 
@@ -84,6 +91,8 @@ def grafica_gasolina(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = df[df["mes"].isin(MESES_VALIDOS)]
+
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -103,6 +112,8 @@ def grafica_co2(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = df[df["mes"].isin(MESES_VALIDOS)]
+
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -117,6 +128,8 @@ def grafica_distancia(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = df[df["mes"].isin(MESES_VALIDOS)]
+
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -151,6 +164,5 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         return {"centros": centros}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
 
 
