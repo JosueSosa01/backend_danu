@@ -23,11 +23,21 @@ df_viejos = pd.read_csv("costos_viejos_S1.csv")
 def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
     df = df.copy()
     df["tipo_centro"] = tipo
+
+    # Renombrar columnas
     df = df.rename(columns={
         "costo_gasolina": "gasto_gasolina",
         "emisiones_co2": "co2_emitido"
     })
-    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], errors="coerce")
+
+    # 🔧 Parseo robusto y seguro
+    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
+
+    # Reportar si se pierden fechas
+    total = len(df)
+    validas = df["fecha_entrega"].notnull().sum()
+    print(f"{tipo}: {validas}/{total} fechas parseadas correctamente")
+
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
 
     columnas_comunes = [
@@ -35,21 +45,22 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
         "co2_emitido", "tipo_centro", "grupo_ruta"
     ]
 
-    # Si es "Nuevos", incluir campos adicionales
     if tipo == "Nuevos":
         columnas_comunes += ["centro", "nombre_centro"]
 
     return df[columnas_comunes].dropna(subset=["fecha_entrega"])
 
+# Aplicar estandarización
 df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 
-# Unificar en un solo DataFrame
+# Dataset unificado
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
+# === Constante: meses válidos ===
 MESES_VALIDOS = ["Jan 2018", "Feb 2018", "Mar 2018", "Apr 2018", "May 2018", "Jun 2018"]
 
-# === Función para aplicar filtros ===
+# === Función de filtros generales ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
@@ -65,7 +76,6 @@ def obtener_kpis(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
 
@@ -85,11 +95,9 @@ def grafica_gasolina(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    # Agrupamiento según visualización y tipo de centro
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
         resumen = df.groupby(["mes", "nombre_centro"])["gasto_gasolina"].sum().reset_index()
         resumen = resumen.rename(columns={"nombre_centro": "grupo"})
@@ -106,7 +114,6 @@ def grafica_co2(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -121,7 +128,6 @@ def grafica_distancia(
     centro: Optional[str] = Query("Todos")
 ):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -156,5 +162,6 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         return {"centros": centros}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 
