@@ -2,7 +2,6 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pandas as pd
-import numpy as np
 from typing import Optional
 
 app = FastAPI(title="Dashboard Nuevo León")
@@ -105,7 +104,7 @@ def grafica_co2(
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
-# === Distribución distancia (con outliers removidos visualmente) ===
+# === Distribución distancia (modificado) ===
 @app.get("/charts/distancia")
 def grafica_distancia(
     tipo_centro: Optional[str] = Query(None),
@@ -115,10 +114,6 @@ def grafica_distancia(
     df = aplicar_filtros(df_total, tipo_centro, centro)
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
-
-    # Eliminar visualmente outliers con percentil 95
-    limite = np.percentile(df["distancia_km"], 95)
-    df = df[df["distancia_km"] <= limite]
 
     bins = pd.cut(df["distancia_km"], bins=10)
     df["bin"] = bins
@@ -142,4 +137,3 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     else:
         centros = []
     return {"centros": centros}
-
