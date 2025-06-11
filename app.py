@@ -110,10 +110,10 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] 
 @app.get("/charts/distancia")
 def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = quitar_outliers_promedio(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df = quitar_outliers_promedio(df, "distancia_km")
     bins = pd.cut(df["distancia_km"], bins=10)
     df["bin"] = bins
     df["distancia_centro"] = df["bin"].apply(lambda r: round((r.left + r.right) / 2))
@@ -139,8 +139,8 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
 
 # === Promedios ===
 def calcular_promedios_generales():
-    df_n_sin = quitar_outliers_promedio(df_nuevos.copy(), "gasto_gasolina")
-    df_v_sin = quitar_outliers_promedio(df_viejos.copy(), "gasto_gasolina")
+    df_n_gas = quitar_outliers_promedio(df_nuevos.copy(), "gasto_gasolina")
+    df_v_gas = quitar_outliers_promedio(df_viejos.copy(), "gasto_gasolina")
 
     return {
         "distancia": {
@@ -148,8 +148,8 @@ def calcular_promedios_generales():
             "Viejos": df_viejos["distancia_km"].mean()
         },
         "gasto_gasolina": {
-            "Nuevos": df_n_sin.groupby("mes")["gasto_gasolina"].sum().mean(),
-            "Viejos": df_v_sin.groupby("mes")["gasto_gasolina"].sum().mean()
+            "Nuevos": df_n_gas.groupby("mes")["gasto_gasolina"].sum().mean(),
+            "Viejos": df_v_gas.groupby("mes")["gasto_gasolina"].sum().mean()
         },
         "co2_emitido": {
             "Nuevos": df_nuevos.groupby("mes")["co2_emitido"].sum().mean(),
