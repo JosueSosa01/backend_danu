@@ -45,7 +45,7 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Outliers con IQR ===
+# === Función de eliminación de outliers ===
 def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
     q1 = df[columna].quantile(0.25)
     q3 = df[columna].quantile(0.75)
@@ -139,33 +139,28 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     return {"centros": centros}
 
 # === Promedios ===
-def calcular_promedios_generales():
-    def promedio_filtrado(df: pd.DataFrame, columna: str) -> float:
-        df = quitar_outliers(df, columna)
-        return df.groupby("mes")[columna].sum().mean()
+@app.get("/charts/promedios")
+def obtener_promedios():
+    df_n_gas = quitar_outliers(df_nuevos, "gasto_gasolina")
+    df_v_gas = quitar_outliers(df_viejos, "gasto_gasolina")
+    df_n_co2 = quitar_outliers(df_nuevos, "co2_emitido")
+    df_v_co2 = quitar_outliers(df_viejos, "co2_emitido")
+    df_n_dist = quitar_outliers(df_nuevos, "distancia_km")
+    df_v_dist = quitar_outliers(df_viejos, "distancia_km")
 
     return {
         "distancia": {
-            "Nuevos": quitar_outliers(df_nuevos.copy(), "distancia_km")["distancia_km"].mean(),
-            "Viejos": quitar_outliers(df_viejos.copy(), "distancia_km")["distancia_km"].mean()
+            "Nuevos": round(df_n_dist["distancia_km"].mean(), 2),
+            "Viejos": round(df_v_dist["distancia_km"].mean(), 2)
         },
         "gasto_gasolina": {
-            "Nuevos": promedio_filtrado(df_nuevos.copy(), "gasto_gasolina"),
-            "Viejos": promedio_filtrado(df_viejos.copy(), "gasto_gasolina")
+            "Nuevos": round(df_n_gas.groupby("mes")["gasto_gasolina"].sum().mean(), 2),
+            "Viejos": round(df_v_gas.groupby("mes")["gasto_gasolina"].sum().mean(), 2)
         },
         "co2_emitido": {
-            "Nuevos": promedio_filtrado(df_nuevos.copy(), "co2_emitido"),
-            "Viejos": promedio_filtrado(df_viejos.copy(), "co2_emitido")
+            "Nuevos": round(df_n_co2.groupby("mes")["co2_emitido"].sum().mean(), 2),
+            "Viejos": round(df_v_co2.groupby("mes")["co2_emitido"].sum().mean(), 2)
         }
-    }
-
-@app.get("/charts/promedios")
-def obtener_promedios():
-    prom = calcular_promedios_generales()
-    return {
-        "distancia": {k: round(v, 2) for k, v in prom["distancia"].items()},
-        "gasto_gasolina": {k: round(v, 2) for k, v in prom["gasto_gasolina"].items()},
-        "co2_emitido": {k: round(v, 2) for k, v in prom["co2_emitido"].items()}
     }
 
 
