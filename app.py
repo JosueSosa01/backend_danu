@@ -140,19 +140,29 @@ def obtener_promedios():
         iqr = q3 - q1
         return col[(col >= q1 - 1.5 * iqr) & (col <= q3 + 1.5 * iqr)]
 
+    promedio_nuevos_distancia = round(quitar(df_nuevos["distancia_km"]).mean(), 2)
+    promedio_viejos_distancia = round(quitar(df_viejos["distancia_km"]).mean(), 2)
+
+    promedio_nuevos_gas = round(quitar(df_nuevos["gasto_gasolina"]).mean(), 2)
+    promedio_viejos_gas = round(quitar(df_viejos["gasto_gasolina"]).mean(), 2)
+
+    promedio_nuevos_co2 = round(quitar(df_nuevos["co2_emitido"]).sum() / 6, 2)
+    promedio_viejos_co2 = round(quitar(df_viejos["co2_emitido"]).sum() / 6, 2)
+
     return {
         "distancia": {
-            "Nuevos": round(quitar(df_nuevos["distancia_km"]).mean(), 2),
-            "Viejos": round(quitar(df_viejos["distancia_km"]).mean(), 2)
+            "Nuevos": promedio_nuevos_distancia,
+            "Viejos": promedio_viejos_distancia
         },
         "gasto_gasolina": {
-            "Nuevos": round(quitar(df_nuevos["gasto_gasolina"]).mean(), 2),
-            "Viejos": round(quitar(df_viejos["gasto_gasolina"]).mean(), 2)
+            "Nuevos": promedio_nuevos_gas,
+            "Viejos": promedio_viejos_gas
         },
         "co2_emitido": {
-            "Nuevos": round(quitar(df_nuevos["co2_emitido"]).sum() / 6, 2),
-            "Viejos": round(quitar(df_viejos["co2_emitido"]).sum() / 6, 2)
+            "Nuevos": promedio_nuevos_co2,
+            "Viejos": promedio_viejos_co2
         }
     }
+
 
 
