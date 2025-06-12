@@ -130,9 +130,14 @@ def grafica_distancia(
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    # Forzar recorte visual: solo mostrar hasta 600 km
-    bins = list(range(0, 601, 100))  # 0-100, ..., hasta 600
-    df = df[df["distancia_km"] <= 600]  # cortar visualmente
+    # Definir rango visual
+    if centro != "Todos":
+        bins = list(range(0, 201, 100))  # Hasta 200 km para centros individuales
+        df = df[df["distancia_km"] <= 200]
+    else:
+        bins = list(range(0, 601, 100))  # Hasta 600 km para Nuevos/Viejos agrupados
+        df = df[df["distancia_km"] <= 600]
+
     df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
@@ -143,6 +148,7 @@ def grafica_distancia(
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
 
     return resumen.to_dict(orient="records")
+
 
 
 # === Centros ===
