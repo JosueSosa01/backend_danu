@@ -120,20 +120,19 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), visualizacion: Optiona
     return resumen.to_dict(orient="records")
 
 @app.get("/charts/distancia")
-def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
+def grafica_distancia(
+    tipo_centro: Optional[str] = Query(None),
+    visualizacion: Optional[str] = Query("Agrupadas"),
+    centro: Optional[str] = Query("Todos")
+):
     df = df_total.copy() if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos" else aplicar_filtros(df_total, tipo_centro, centro)
     df = quitar_outliers(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    # Calcular promedio visual
-    promedio = (df["distancia_km"] * 1).mean()
-    
-    # Recorte visual: solo incluir hasta el bin > promedio
-    max_visual = df[df["distancia_km"] > promedio]["distancia_km"].max()
-    step = 100
-    bins = list(range(0, int(max_visual + step), step))
-
+    # Forzar recorte visual: solo mostrar hasta 600 km
+    bins = list(range(0, 601, 100))  # 0-100, ..., hasta 600
+    df = df[df["distancia_km"] <= 600]  # cortar visualmente
     df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
