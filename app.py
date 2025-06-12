@@ -45,7 +45,7 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de eliminación de outliers solo para gasto_gasolina ===
+# === Función de eliminación de outliers ===
 def quitar_outliers_promedio(df: pd.DataFrame, columna: str) -> pd.DataFrame:
     q1 = df[columna].quantile(0.25)
     q3 = df[columna].quantile(0.75)
@@ -103,6 +103,7 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] 
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
+    df = quitar_outliers_promedio(df, "co2_emitido")
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
@@ -149,16 +150,16 @@ def calcular_promedios_generales():
 
     return {
         "distancia": {
-            "Nuevos": df_nuevos["distancia_km"].mean(),
-            "Viejos": df_viejos["distancia_km"].mean()
+            "Nuevos": quitar_outliers_promedio(df_nuevos, "distancia_km")["distancia_km"].mean(),
+            "Viejos": quitar_outliers_promedio(df_viejos, "distancia_km")["distancia_km"].mean()
         },
         "gasto_gasolina": {
             "Nuevos": promedio_mensual_post_iqr(df_nuevos, "gasto_gasolina"),
             "Viejos": promedio_mensual_post_iqr(df_viejos, "gasto_gasolina")
         },
         "co2_emitido": {
-            "Nuevos": df_nuevos.groupby("mes")["co2_emitido"].sum().mean(),
-            "Viejos": df_viejos.groupby("mes")["co2_emitido"].sum().mean()
+            "Nuevos": promedio_mensual_post_iqr(df_nuevos, "co2_emitido"),
+            "Viejos": promedio_mensual_post_iqr(df_viejos, "co2_emitido")
         }
     }
 
