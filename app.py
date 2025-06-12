@@ -45,13 +45,13 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de eliminación de outliers ===
-def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
+# === Función de eliminación de outliers con factor ajustable ===
+def quitar_outliers(df: pd.DataFrame, columna: str, factor: float = 1.5) -> pd.DataFrame:
     q1 = df[columna].quantile(0.25)
     q3 = df[columna].quantile(0.75)
     iqr = q3 - q1
-    lim_inf = q1 - 1.5 * iqr
-    lim_sup = q3 + 1.5 * iqr
+    lim_inf = q1 - factor * iqr
+    lim_sup = q3 + factor * iqr
     return df[(df[columna] >= lim_inf) & (df[columna] <= lim_sup)]
 
 # === Filtrado ===
@@ -123,7 +123,7 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: O
     else:
         df = aplicar_filtros(df_total, tipo_centro, centro)
 
-    df = quitar_outliers(df, "distancia_km")
+    df = quitar_outliers(df, "distancia_km", factor=1.0)
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -153,16 +153,16 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
 # === Promedios ===
 @app.get("/charts/promedios")
 def obtener_promedios():
-    def quitar_outliers(col):
+    def quitar_outliers(col, factor=1.5):
         q1 = col.quantile(0.25)
         q3 = col.quantile(0.75)
         iqr = q3 - q1
-        return col[(col >= q1 - 1.5 * iqr) & (col <= q3 + 1.5 * iqr)]
+        return col[(col >= q1 - factor * iqr) & (col <= q3 + factor * iqr)]
 
     return {
         "distancia": {
-            "Nuevos": round(quitar_outliers(df_nuevos["distancia_km"]).mean(), 2),
-            "Viejos": round(quitar_outliers(df_viejos["distancia_km"]).mean(), 2)
+            "Nuevos": round(quitar_outliers(df_nuevos["distancia_km"], factor=1.0).mean(), 2),
+            "Viejos": round(quitar_outliers(df_viejos["distancia_km"], factor=1.0).mean(), 2)
         },
         "gasto_gasolina": {
             "Nuevos": round(quitar_outliers(df_nuevos["costo_gasolina"]).mean(), 2),
@@ -173,5 +173,17 @@ def obtener_promedios():
             "Viejos": round(quitar_outliers(df_viejos["emisiones_co2"]).sum() / 6, 2)
         }
     }
+
+# === Debug endpoint opcional ===
+@app.get("/debug/outliers")
+def revisar_outliers():
+    dist_full = df_total["distancia_km"]
+    dist_filtrado = quitar_outliers(df_total.copy(), "distancia_km", factor=1.0)["distancia_km"]
+    return {
+        "total_original": len(dist_full),
+        "despues_outliers": len(dist_filtrado),
+        "porcentaje_filtrado": round(100 * (1 - len(dist_filtrado) / len(dist_full)), 2)
+    }
+
 
 
