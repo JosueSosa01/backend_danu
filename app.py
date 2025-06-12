@@ -65,23 +65,22 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
 # === Endpoint de promedios exactos ===
 @app.get("/charts/promedios")
 def obtener_promedios():
-    def quitar(col):
-        q1, q3 = col.quantile(0.25), col.quantile(0.75)
-        iqr = q3 - q1
-        return col[(col >= q1 - 1.5 * iqr) & (col <= q3 + 1.5 * iqr)]
+    def quitar(df: pd.DataFrame, columna: str) -> pd.Series:
+        df_filtrado = quitar_outliers(df, columna)
+        return df_filtrado[columna]
 
     return {
         "distancia": {
-            "Nuevos": round(quitar(df_nuevos["distancia_km"]).mean(), 2),
-            "Viejos": round(quitar(df_viejos["distancia_km"]).mean(), 2)
+            "Nuevos": round(quitar(df_nuevos, "distancia_km").mean(), 2),
+            "Viejos": round(quitar(df_viejos, "distancia_km").mean(), 2)
         },
         "gasto_gasolina": {
-            "Nuevos": round(quitar(df_nuevos["gasto_gasolina"]).mean(), 2),
-            "Viejos": round(quitar(df_viejos["gasto_gasolina"]).mean(), 2)
+            "Nuevos": round(quitar(df_nuevos, "gasto_gasolina").mean(), 2),
+            "Viejos": round(quitar(df_viejos, "gasto_gasolina").mean(), 2)
         },
         "co2_emitido": {
-            "Nuevos": round(quitar(df_nuevos["co2_emitido"]).mean(), 2),
-            "Viejos": round(quitar(df_viejos["co2_emitido"]).mean(), 2)
+            "Nuevos": round(quitar(df_nuevos, "co2_emitido").mean(), 2),
+            "Viejos": round(quitar(df_viejos, "co2_emitido").mean(), 2)
         }
     }
 
@@ -154,4 +153,5 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     df = df_total[df_total["tipo_centro"] == tipo_centro]
     centros = df["nombre_centro"].dropna().unique().tolist() if tipo_centro == "Nuevos" else []
     return {"centros": centros}
+
 
