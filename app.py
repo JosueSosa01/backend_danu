@@ -134,10 +134,7 @@ def grafica_distancia(
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
     # Forzar bins: 600 km para general, 200 km para centro individual
-    if centro != "Todos":
-        df = df[df["distancia_km"] <= 200]
-        bins = list(range(0, 201, 100))
-    else:
+    if:
         df = df[df["distancia_km"] <= 600]
         bins = list(range(0, 601, 100))
 
