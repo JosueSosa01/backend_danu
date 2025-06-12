@@ -45,8 +45,8 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función general de outliers ===
-def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
+# === Función de eliminación de outliers solo para gasto_gasolina ===
+def quitar_outliers_promedio(df: pd.DataFrame, columna: str) -> pd.DataFrame:
     q1 = df[columna].quantile(0.25)
     q3 = df[columna].quantile(0.75)
     iqr = q3 - q1
@@ -65,26 +65,25 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
 # === KPIs ===
 @app.get("/kpis")
 def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
-    if df.empty:
+    df_filtrado = aplicar_filtros(df_total, tipo_centro, centro)
+    if df_filtrado.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
 
-    df_gasto = quitar_outliers(df, "gasto_gasolina")
-    df_co2 = quitar_outliers(df, "co2_emitido") if tipo_centro else df
+    df_promedio = quitar_outliers_promedio(df_filtrado.copy(), "gasto_gasolina")
 
     return {
-        "Kilómetros recorridos": f"{df['distancia_km'].sum():,.0f} km",
-        "Emisiones de CO₂": f"{df_co2['co2_emitido'].sum():,.0f} kg",
-        "Gasto estimado en gasolina": f"${df['gasto_gasolina'].sum():,.0f}",
-        "Costo promedio por ruta": f"${df_gasto['gasto_gasolina'].mean():,.2f}",
-        "Total de rutas": len(df)
+        "Kilómetros recorridos": f"{df_filtrado['distancia_km'].sum():,.0f} km",
+        "Emisiones de CO₂": f"{df_filtrado['co2_emitido'].sum():,.0f} kg",
+        "Gasto estimado en gasolina": f"${df_filtrado['gasto_gasolina'].sum():,.0f}",
+        "Costo promedio por ruta": f"${df_promedio['gasto_gasolina'].mean():,.2f}",
+        "Total de rutas": len(df_filtrado)
     }
 
 # === Gasto gasolina ===
 @app.get("/charts/gasolina")
 def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
-    df = quitar_outliers(df, "gasto_gasolina")
+    df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = quitar_outliers_promedio(df, "gasto_gasolina")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -100,8 +99,8 @@ def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Op
 # === Emisiones CO₂ ===
 @app.get("/charts/co2")
 def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
-    df = quitar_outliers(df, "co2_emitido")
+    df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = quitar_outliers_promedio(df, "co2_emitido")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -111,8 +110,8 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] 
 # === Distribución distancia ===
 @app.get("/charts/distancia")
 def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
-    df = quitar_outliers(df, "distancia_km")
+    df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = quitar_outliers_promedio(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -139,20 +138,21 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         centros = []
     return {"centros": centros}
 
-# === Promedios para líneas ===
+# === Promedios ===
 def calcular_promedios_generales():
     def promedio_mensual_post_iqr(df: pd.DataFrame, columna: str):
         promedios = []
         for mes, grupo in df.groupby("mes"):
-            limpio = quitar_outliers(grupo, columna)
-            total = limpio[columna].sum()
-            promedios.append(total)
-        return sum(promedios) / len(promedios) if promedios else 0
+            limpio = quitar_outliers_promedio(grupo, columna)
+            if not limpio.empty:
+                prom = limpio[columna].mean()
+                promedios.append(prom)
+        return sum(promedios) / len(promedios)
 
     return {
         "distancia": {
-            "Nuevos": quitar_outliers(df_nuevos, "distancia_km")["distancia_km"].mean(),
-            "Viejos": quitar_outliers(df_viejos, "distancia_km")["distancia_km"].mean()
+            "Nuevos": quitar_outliers_promedio(df_nuevos, "distancia_km")["distancia_km"].mean(),
+            "Viejos": quitar_outliers_promedio(df_viejos, "distancia_km")["distancia_km"].mean()
         },
         "gasto_gasolina": {
             "Nuevos": promedio_mensual_post_iqr(df_nuevos, "gasto_gasolina"),
@@ -172,5 +172,6 @@ def obtener_promedios():
         "gasto_gasolina": {k: round(v, 2) for k, v in prom["gasto_gasolina"].items()},
         "co2_emitido": {k: round(v, 2) for k, v in prom["co2_emitido"].items()}
     }
+
 
 
