@@ -126,7 +126,15 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: O
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df["distancia_centro"] = pd.cut(df["distancia_km"], bins=10).apply(lambda r: round((r.left + r.right) / 2))
+    # Calcular promedio visual
+    promedio = (df["distancia_km"] * 1).mean()
+    
+    # Recorte visual: solo incluir hasta el bin > promedio
+    max_visual = df[df["distancia_km"] > promedio]["distancia_km"].max()
+    step = 100
+    bins = list(range(0, int(max_visual + step), step))
+
+    df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
         resumen = df.groupby(["distancia_centro", "nombre_centro"]).size().reset_index(name="frecuencia")
@@ -136,6 +144,7 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: O
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
 
     return resumen.to_dict(orient="records")
+
 
 # === Centros ===
 @app.get("/centros")
