@@ -45,7 +45,7 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de eliminación de outliers ===
+# === Función general de outliers ===
 def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
     q1 = df[columna].quantile(0.25)
     q3 = df[columna].quantile(0.75)
@@ -65,65 +65,57 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
 # === KPIs ===
 @app.get("/kpis")
 def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("Todos")):
-    df_filtrado = aplicar_filtros(df_total, tipo_centro, centro)
-    if df_filtrado.empty:
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
 
-    df_promedio = quitar_outliers(df_filtrado.copy(), "gasto_gasolina")
+    df_gasto = quitar_outliers(df, "gasto_gasolina")
+    df_co2 = quitar_outliers(df, "co2_emitido") if tipo_centro else df
 
     return {
-        "Kilómetros recorridos": f"{df_filtrado['distancia_km'].sum():,.0f} km",
-        "Emisiones de CO₂": f"{df_filtrado['co2_emitido'].sum():,.0f} kg",
-        "Gasto estimado en gasolina": f"${df_filtrado['gasto_gasolina'].sum():,.0f}",
-        "Costo promedio por ruta": f"${df_promedio['gasto_gasolina'].mean():,.2f}",
-        "Total de rutas": len(df_filtrado)
+        "Kilómetros recorridos": f"{df['distancia_km'].sum():,.0f} km",
+        "Emisiones de CO₂": f"{df_co2['co2_emitido'].sum():,.0f} kg",
+        "Gasto estimado en gasolina": f"${df['gasto_gasolina'].sum():,.0f}",
+        "Costo promedio por ruta": f"${df_gasto['gasto_gasolina'].mean():,.2f}",
+        "Total de rutas": len(df)
     }
 
 # === Gasto gasolina ===
 @app.get("/charts/gasolina")
 def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    df = quitar_outliers(df, "gasto_gasolina")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    resumen_list = []
-    for mes, grupo in df.groupby("mes"):
-        limpio = quitar_outliers(grupo.copy(), "gasto_gasolina")
-        if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
-            tmp = limpio.groupby("nombre_centro")["gasto_gasolina"].sum().reset_index()
-            tmp["mes"] = mes
-            resumen_list.append(tmp.rename(columns={"nombre_centro": "grupo"}))
-        else:
-            tmp = limpio.groupby("tipo_centro")["gasto_gasolina"].sum().reset_index()
-            tmp["mes"] = mes
-            resumen_list.append(tmp.rename(columns={"tipo_centro": "grupo"}))
+    if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
+        resumen = df.groupby(["mes", "nombre_centro"])["gasto_gasolina"].sum().reset_index()
+        resumen = resumen.rename(columns={"nombre_centro": "grupo"})
+    else:
+        resumen = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
+        resumen = resumen.rename(columns={"tipo_centro": "grupo"})
 
-    return pd.concat(resumen_list).to_dict(orient="records")
+    return resumen.to_dict(orient="records")
 
 # === Emisiones CO₂ ===
 @app.get("/charts/co2")
 def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    df = quitar_outliers(df, "co2_emitido")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    resumen_list = []
-    for mes, grupo in df.groupby("mes"):
-        limpio = quitar_outliers(grupo.copy(), "co2_emitido")
-        tmp = limpio.groupby("tipo_centro")["co2_emitido"].sum().reset_index()
-        tmp["mes"] = mes
-        resumen_list.append(tmp)
-
-    return pd.concat(resumen_list).to_dict(orient="records")
+    resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
+    return resumen.to_dict(orient="records")
 
 # === Distribución distancia ===
 @app.get("/charts/distancia")
 def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    df = quitar_outliers(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df = quitar_outliers(df.copy(), "distancia_km")
     bins = pd.cut(df["distancia_km"], bins=10)
     df["bin"] = bins
     df["distancia_centro"] = df["bin"].apply(lambda r: round((r.left + r.right) / 2))
@@ -135,7 +127,7 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: O
         resumen = df.groupby(["distancia_centro", "tipo_centro"]).size().reset_index(name="frecuencia")
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
 
-    return resumen.to_dict(orient="records")
+    return resumen[["distancia_centro", "grupo", "frecuencia"]].to_dict(orient="records")
 
 # === Centros disponibles ===
 @app.get("/centros")
@@ -147,7 +139,7 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
         centros = []
     return {"centros": centros}
 
-# === Promedios ===
+# === Promedios para líneas ===
 def calcular_promedios_generales():
     def promedio_mensual_post_iqr(df: pd.DataFrame, columna: str):
         promedios = []
@@ -155,7 +147,7 @@ def calcular_promedios_generales():
             limpio = quitar_outliers(grupo, columna)
             total = limpio[columna].sum()
             promedios.append(total)
-        return sum(promedios) / len(promedios)
+        return sum(promedios) / len(promedios) if promedios else 0
 
     return {
         "distancia": {
