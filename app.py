@@ -47,8 +47,8 @@ df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
 # === Outliers ===
 def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
-    q1 = df[columna].quantile(0.25)
-    q3 = df[columna].quantile(0.75)
+    q1 = df[columna].quantile(0.05)
+    q3 = df[columna].quantile(0.95)
     iqr = q3 - q1
     lim_inf = q1 - 1.5 * iqr
     lim_sup = q3 + 1.5 * iqr
