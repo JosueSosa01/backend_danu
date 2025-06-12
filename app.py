@@ -126,7 +126,8 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: O
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df["distancia_centro"] = pd.cut(df["distancia_km"], bins=10).apply(lambda r: round((r.left + r.right) / 2))
+    bins = list(range(0, 801, 100))  # De 0 a 800 km en pasos de 100
+    df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
         resumen = df.groupby(["distancia_centro", "nombre_centro"]).size().reset_index(name="frecuencia")
