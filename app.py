@@ -47,9 +47,9 @@ df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
 # === Outliers usando percentiles 5% - 95% ===
 def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
-    lim_inf = df[columna].quantile(0.05)
-    lim_sup = df[columna].quantile(0.95)
-    return df[(df[columna] >= lim_inf) & (df[columna] <= lim_sup)]
+    q5 = df[columna].quantile(0.05)
+    q95 = df[columna].quantile(0.95)
+    return df[(df[columna] >= q5) & (df[columna] <= q95)]
 
 # === Filtrado ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
