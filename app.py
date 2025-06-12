@@ -153,25 +153,25 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
 # === Promedios ===
 @app.get("/charts/promedios")
 def obtener_promedios():
-    df_n_gas = quitar_outliers(df_nuevos, "gasto_gasolina")
-    df_v_gas = quitar_outliers(df_viejos, "gasto_gasolina")
-    df_n_co2 = quitar_outliers(df_nuevos, "co2_emitido")
-    df_v_co2 = quitar_outliers(df_viejos, "co2_emitido")
-    df_n_dist = quitar_outliers(df_nuevos, "distancia_km")
-    df_v_dist = quitar_outliers(df_viejos, "distancia_km")
+    def quitar_outliers(col):
+        q1 = col.quantile(0.25)
+        q3 = col.quantile(0.75)
+        iqr = q3 - q1
+        return col[(col >= q1 - 1.5 * iqr) & (col <= q3 + 1.5 * iqr)]
 
     return {
         "distancia": {
-            "Nuevos": round(df_n_dist["distancia_km"].mean(), 2),
-            "Viejos": round(df_v_dist["distancia_km"].mean(), 2)
+            "Nuevos": round(quitar_outliers(df_nuevos["distancia_km"]).mean(), 2),
+            "Viejos": round(quitar_outliers(df_viejos["distancia_km"]).mean(), 2)
         },
         "gasto_gasolina": {
-            "Nuevos": round(df_n_gas.groupby("mes")["gasto_gasolina"].sum().mean(), 2),
-            "Viejos": round(df_v_gas.groupby("mes")["gasto_gasolina"].sum().mean(), 2)
+            "Nuevos": round(quitar_outliers(df_nuevos["costo_gasolina"]).mean(), 2),
+            "Viejos": round(quitar_outliers(df_viejos["costo_gasolina"]).mean(), 2)
         },
         "co2_emitido": {
-            "Nuevos": round(df_n_co2.groupby("mes")["co2_emitido"].sum().mean(), 2),
-            "Viejos": round(df_v_co2.groupby("mes")["co2_emitido"].sum().mean(), 2)
+            "Nuevos": round(quitar_outliers(df_nuevos["emisiones_co2"]).sum() / 6, 2),
+            "Viejos": round(quitar_outliers(df_viejos["emisiones_co2"]).sum() / 6, 2)
         }
     }
+
 
