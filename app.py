@@ -105,6 +105,7 @@ def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Op
     else:
         resumen = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
+        resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")  # ✅ Etiqueta
 
     return resumen.to_dict(orient="records")
 
@@ -117,6 +118,8 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), visualizacion: Optiona
 
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     resumen = resumen.rename(columns={"tipo_centro": "grupo"})
+    resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")  # ✅ Etiqueta
+
     return resumen.to_dict(orient="records")
 
 @app.get("/charts/distancia")
@@ -130,9 +133,14 @@ def grafica_distancia(
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    # Forzar recorte visual: solo mostrar hasta 600 km
-    bins = list(range(0, 601, 100))  # 0-100, ..., hasta 600
-    df = df[df["distancia_km"] <= 600]  # cortar visualmente
+    # Forzar bins: 600 km para general, 200 km para centro individual
+    if centro != "Todos":
+        df = df[df["distancia_km"] <= 200]
+        bins = list(range(0, 201, 100))
+    else:
+        df = df[df["distancia_km"] <= 600]
+        bins = list(range(0, 601, 100))
+
     df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
@@ -141,8 +149,10 @@ def grafica_distancia(
     else:
         resumen = df.groupby(["distancia_centro", "tipo_centro"]).size().reset_index(name="frecuencia")
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
+        resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")  # ✅ Etiqueta
 
     return resumen.to_dict(orient="records")
+
 
 
 
