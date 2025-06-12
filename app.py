@@ -62,6 +62,29 @@ def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Option
         df = df[df["nombre_centro"] == centro]
     return df
 
+# === Endpoint de promedios exactos ===
+@app.get("/charts/promedios")
+def obtener_promedios():
+    def quitar(col):
+        q1, q3 = col.quantile(0.25), col.quantile(0.75)
+        iqr = q3 - q1
+        return col[(col >= q1 - 1.5 * iqr) & (col <= q3 + 1.5 * iqr)]
+
+    return {
+        "distancia": {
+            "Nuevos": round(quitar(df_nuevos["distancia_km"]).mean(), 2),
+            "Viejos": round(quitar(df_viejos["distancia_km"]).mean(), 2)
+        },
+        "gasto_gasolina": {
+            "Nuevos": round(quitar(df_nuevos["gasto_gasolina"]).mean(), 2),
+            "Viejos": round(quitar(df_viejos["gasto_gasolina"]).mean(), 2)
+        },
+        "co2_emitido": {
+            "Nuevos": round(quitar(df_nuevos["co2_emitido"]).mean(), 2),
+            "Viejos": round(quitar(df_viejos["co2_emitido"]).mean(), 2)
+        }
+    }
+
 # === KPIs ===
 @app.get("/kpis")
 def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("Todos")):
@@ -131,38 +154,4 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     df = df_total[df_total["tipo_centro"] == tipo_centro]
     centros = df["nombre_centro"].dropna().unique().tolist() if tipo_centro == "Nuevos" else []
     return {"centros": centros}
-
-# === Promedios (corrige nombres de columna también) ===
-@app.get("/charts/promedios")
-def obtener_promedios():
-    def quitar(col):
-        q1, q3 = col.quantile(0.25), col.quantile(0.75)
-        iqr = q3 - q1
-        return col[(col >= q1 - 1.5 * iqr) & (col <= q3 + 1.5 * iqr)]
-
-    promedio_nuevos_distancia = round(quitar(df_nuevos["distancia_km"]).mean(), 2)
-    promedio_viejos_distancia = round(quitar(df_viejos["distancia_km"]).mean(), 2)
-
-    promedio_nuevos_gas = round(quitar(df_nuevos["gasto_gasolina"]).mean(), 2)
-    promedio_viejos_gas = round(quitar(df_viejos["gasto_gasolina"]).mean(), 2)
-
-    promedio_nuevos_co2 = round(quitar(df_nuevos["co2_emitido"]).sum() / 6, 2)
-    promedio_viejos_co2 = round(quitar(df_viejos["co2_emitido"]).sum() / 6, 2)
-
-    return {
-        "distancia": {
-            "Nuevos": promedio_nuevos_distancia,
-            "Viejos": promedio_viejos_distancia
-        },
-        "gasto_gasolina": {
-            "Nuevos": promedio_nuevos_gas,
-            "Viejos": promedio_viejos_gas
-        },
-        "co2_emitido": {
-            "Nuevos": promedio_nuevos_co2,
-            "Viejos": promedio_viejos_co2
-        }
-    }
-
-
 
