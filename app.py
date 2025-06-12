@@ -82,7 +82,11 @@ def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("T
 # === Gasto gasolina ===
 @app.get("/charts/gasolina")
 def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total, tipo_centro, centro)
+    if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos":
+        df = df_total.copy()
+    else:
+        df = aplicar_filtros(df_total, tipo_centro, centro)
+
     df = quitar_outliers(df, "gasto_gasolina")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
@@ -98,8 +102,12 @@ def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Op
 
 # === Emisiones CO₂ ===
 @app.get("/charts/co2")
-def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total, tipo_centro, centro)
+def grafica_co2(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
+    if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos":
+        df = df_total.copy()
+    else:
+        df = aplicar_filtros(df_total, tipo_centro, centro)
+
     df = quitar_outliers(df, "co2_emitido")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
@@ -110,7 +118,11 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] 
 # === Distribución distancia ===
 @app.get("/charts/distancia")
 def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    df = aplicar_filtros(df_total, tipo_centro, centro)
+    if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos":
+        df = df_total.copy()
+    else:
+        df = aplicar_filtros(df_total, tipo_centro, centro)
+
     df = quitar_outliers(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
@@ -162,6 +174,4 @@ def obtener_promedios():
             "Viejos": round(df_v_co2.groupby("mes")["co2_emitido"].sum().mean(), 2)
         }
     }
-
-
 
