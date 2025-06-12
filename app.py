@@ -16,174 +16,129 @@ app.add_middleware(
 )
 
 # === Cargar CSVs ===
-df_nuevos = pd.read_csv("costos_nuevos_S1.csv")
-df_viejos = pd.read_csv("costos_viejos_S1.csv")
-
-# === Estandarización ===
-def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
-    df = df.copy()
+def cargar_df(ruta, tipo):
+    df = pd.read_csv(ruta, parse_dates=["fecha_entrega"])
     df["tipo_centro"] = tipo
-    df = df.rename(columns={
-        "costo_gasolina": "gasto_gasolina",
-        "emisiones_co2": "co2_emitido"
-    })
-
-    df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
+    df["co2_kg"] = df["emisiones_co2"] if "emisiones_co2" in df.columns else df["co2_emitido_kg"]
+    df["costo_gasolina"] = df["costo_gasolina"] if "costo_gasolina" in df.columns else df["gasto_gasolina"]
+    df["distancia_km"] = df["distancia_km"].clip(lower=1)
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
+    df["centro"] = df["nombre_centro"] if "nombre_centro" in df.columns else df.get("centro", "Sin nombre")
+    return df
 
-    columnas = [
-        "fecha_entrega", "mes", "distancia_km", "gasto_gasolina",
-        "co2_emitido", "tipo_centro", "grupo_ruta"
-    ]
-
-    if tipo == "Nuevos":
-        columnas += ["centro", "nombre_centro"]
-
-    return df[columnas].dropna(subset=["fecha_entrega"])
-
-df_nuevos = estandarizar(df_nuevos, "Nuevos")
-df_viejos = estandarizar(df_viejos, "Viejos")
+df_nuevos = cargar_df("costos_nuevos_S1.csv", "Nuevos")
+df_viejos = cargar_df("costos_viejos_S1.csv", "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de eliminación de outliers con factor ajustable ===
-def quitar_outliers(df: pd.DataFrame, columna: str, factor: float = 1.5) -> pd.DataFrame:
-    q1 = df[columna].quantile(0.25)
-    q3 = df[columna].quantile(0.75)
+# === Limpieza de outliers ===
+def quitar_outliers(df: pd.DataFrame, col: str):
+    q1 = df[col].quantile(0.25)
+    q3 = df[col].quantile(0.75)
     iqr = q3 - q1
-    lim_inf = q1 - factor * iqr
-    lim_sup = q3 + factor * iqr
-    return df[(df[columna] >= lim_inf) & (df[columna] <= lim_sup)]
+    lim_inf = q1 - 1.5 * iqr
+    lim_sup = q3 + 1.5 * iqr
+    return df[(df[col] >= lim_inf) & (df[col] <= lim_sup)]
 
 # === Filtrado ===
-def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
+def aplicar_filtros(df, tipo_centro: Optional[str], centro: Optional[str]):
     if tipo_centro:
         df = df[df["tipo_centro"] == tipo_centro]
     if tipo_centro == "Nuevos" and centro and centro != "Todos":
-        df = df[df["nombre_centro"] == centro]
+        df = df[df["centro"] == centro]
     return df
 
 # === KPIs ===
 @app.get("/kpis")
 def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("Todos")):
-    df_filtrado = aplicar_filtros(df_total, tipo_centro, centro)
-    if df_filtrado.empty:
-        return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    if df.empty:
+        return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df_promedio = quitar_outliers(df_filtrado.copy(), "gasto_gasolina")
-
+    df_sin_outliers = quitar_outliers(df, "costo_gasolina")
     return {
-        "Kilómetros recorridos": f"{df_filtrado['distancia_km'].sum():,.0f} km",
-        "Emisiones de CO₂": f"{df_filtrado['co2_emitido'].sum():,.0f} kg",
-        "Gasto estimado en gasolina": f"${df_filtrado['gasto_gasolina'].sum():,.0f}",
-        "Costo promedio por ruta": f"${df_promedio['gasto_gasolina'].mean():,.2f}",
-        "Total de rutas": len(df_filtrado)
+        "Kilómetros recorridos": f"{df['distancia_km'].sum():,.0f} km",
+        "Emisiones de CO₂": f"{df['co2_kg'].sum():,.0f} kg",
+        "Gasto estimado en gasolina": f"${df['costo_gasolina'].sum():,.0f}",
+        "Costo promedio por ruta": f"${df_sin_outliers['costo_gasolina'].mean():,.2f}",
+        "Total de rutas": len(df)
     }
 
 # === Gasto gasolina ===
 @app.get("/charts/gasolina")
 def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos":
-        df = df_total.copy()
-    else:
-        df = aplicar_filtros(df_total, tipo_centro, centro)
-
-    df = quitar_outliers(df, "gasto_gasolina")
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    df = quitar_outliers(df, "costo_gasolina")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
-        resumen = df.groupby(["mes", "nombre_centro"])["gasto_gasolina"].sum().reset_index()
-        resumen = resumen.rename(columns={"nombre_centro": "grupo"})
+        resumen = df.groupby(["mes", "centro"])["costo_gasolina"].sum().reset_index()
+        resumen = resumen.rename(columns={"centro": "grupo", "costo_gasolina": "gasto_gasolina"})
     else:
-        resumen = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
-        resumen = resumen.rename(columns={"tipo_centro": "grupo"})
+        resumen = df.groupby(["mes", "tipo_centro"])["costo_gasolina"].sum().reset_index()
+        resumen = resumen.rename(columns={"tipo_centro": "grupo", "costo_gasolina": "gasto_gasolina"})
 
     return resumen.to_dict(orient="records")
 
-# === Emisiones CO₂ ===
+# === Emisiones CO2 ===
 @app.get("/charts/co2")
 def grafica_co2(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos":
-        df = df_total.copy()
-    else:
-        df = aplicar_filtros(df_total, tipo_centro, centro)
-
-    df = quitar_outliers(df, "co2_emitido")
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    df = quitar_outliers(df, "co2_kg")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
+    resumen = df.groupby(["mes", "tipo_centro"])["co2_kg"].sum().reset_index()
+    resumen = resumen.rename(columns={"tipo_centro": "grupo", "co2_kg": "co2_emitido"})
     return resumen.to_dict(orient="records")
 
-# === Distribución distancia ===
+# === Distancia ===
 @app.get("/charts/distancia")
 def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
-    if tipo_centro == "Nuevos" and visualizacion == "Agrupadas" and centro == "Todos":
-        df = df_total.copy()
-    else:
-        df = aplicar_filtros(df_total, tipo_centro, centro)
-
-    df = quitar_outliers(df, "distancia_km", factor=1.0)
+    df = aplicar_filtros(df_total.copy(), tipo_centro, centro)
+    df = quitar_outliers(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
     bins = pd.cut(df["distancia_km"], bins=10)
-    df["bin"] = bins
-    df["distancia_centro"] = df["bin"].apply(lambda r: round((r.left + r.right) / 2))
+    df["distancia_centro"] = bins.apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
-        resumen = df.groupby(["distancia_centro", "nombre_centro"]).size().reset_index(name="frecuencia")
-        resumen = resumen.rename(columns={"nombre_centro": "grupo"})
+        resumen = df.groupby(["distancia_centro", "centro"]).size().reset_index(name="frecuencia")
+        resumen = resumen.rename(columns={"centro": "grupo"})
     else:
         resumen = df.groupby(["distancia_centro", "tipo_centro"]).size().reset_index(name="frecuencia")
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
 
-    return resumen[["distancia_centro", "grupo", "frecuencia"]].to_dict(orient="records")
-
-# === Centros disponibles ===
-@app.get("/centros")
-def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
-    df = df_total[df_total["tipo_centro"] == tipo_centro]
-    if tipo_centro == "Nuevos":
-        centros = df["nombre_centro"].dropna().unique().tolist()
-    else:
-        centros = []
-    return {"centros": centros}
+    return resumen.to_dict(orient="records")
 
 # === Promedios ===
 @app.get("/charts/promedios")
 def obtener_promedios():
-    def quitar_outliers(col, factor=1.5):
-        q1 = col.quantile(0.25)
-        q3 = col.quantile(0.75)
-        iqr = q3 - q1
-        return col[(col >= q1 - factor * iqr) & (col <= q3 + factor * iqr)]
+    def limpio(col):
+        return quitar_outliers(df_total[[col]].dropna(), col)[col]
 
     return {
         "distancia": {
-            "Nuevos": round(quitar_outliers(df_nuevos["distancia_km"], factor=1.0).mean(), 2),
-            "Viejos": round(quitar_outliers(df_viejos["distancia_km"], factor=1.0).mean(), 2)
+            "Nuevos": round(quitar_outliers(df_nuevos, "distancia_km")["distancia_km"].mean(), 2),
+            "Viejos": round(quitar_outliers(df_viejos, "distancia_km")["distancia_km"].mean(), 2)
         },
         "gasto_gasolina": {
-            "Nuevos": round(quitar_outliers(df_nuevos["costo_gasolina"]).mean(), 2),
-            "Viejos": round(quitar_outliers(df_viejos["costo_gasolina"]).mean(), 2)
+            "Nuevos": round(quitar_outliers(df_nuevos, "costo_gasolina")["costo_gasolina"].mean(), 2),
+            "Viejos": round(quitar_outliers(df_viejos, "costo_gasolina")["costo_gasolina"].mean(), 2)
         },
         "co2_emitido": {
-            "Nuevos": round(quitar_outliers(df_nuevos["emisiones_co2"]).sum() / 6, 2),
-            "Viejos": round(quitar_outliers(df_viejos["emisiones_co2"]).sum() / 6, 2)
+            "Nuevos": round(quitar_outliers(df_nuevos, "co2_kg")["co2_kg"].sum() / 6, 2),
+            "Viejos": round(quitar_outliers(df_viejos, "co2_kg")["co2_kg"].sum() / 6, 2)
         }
     }
 
-# === Debug endpoint opcional ===
-@app.get("/debug/outliers")
-def revisar_outliers():
-    dist_full = df_total["distancia_km"]
-    dist_filtrado = quitar_outliers(df_total.copy(), "distancia_km", factor=1.0)["distancia_km"]
-    return {
-        "total_original": len(dist_full),
-        "despues_outliers": len(dist_filtrado),
-        "porcentaje_filtrado": round(100 * (1 - len(dist_filtrado) / len(dist_full)), 2)
-    }
+# === Centros ===
+@app.get("/centros")
+def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
+    df = df_total[df_total["tipo_centro"] == tipo_centro]
+    centros = df["centro"].dropna().unique().tolist()
+    return {"centros": centros}
 
 
 
