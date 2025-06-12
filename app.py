@@ -45,14 +45,18 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Función de eliminación de outliers ===
-def quitar_outliers_promedio(df: pd.DataFrame, columna: str) -> pd.DataFrame:
-    q1 = df[columna].quantile(0.25)
-    q3 = df[columna].quantile(0.75)
-    iqr = q3 - q1
-    lim_inf = q1 - 1.5 * iqr
-    lim_sup = q3 + 1.5 * iqr
-    return df[(df[columna] >= lim_inf) & (df[columna] <= lim_sup)]
+# === Función de eliminación de outliers por grupo mensual ===
+def quitar_outliers_grupo_mes(df: pd.DataFrame, columna: str) -> pd.DataFrame:
+    limpio = []
+    for _, grupo in df.groupby(["mes"]):
+        q1 = grupo[columna].quantile(0.25)
+        q3 = grupo[columna].quantile(0.75)
+        iqr = q3 - q1
+        lim_inf = q1 - 1.5 * iqr
+        lim_sup = q3 + 1.5 * iqr
+        grupo_filtrado = grupo[(grupo[columna] >= lim_inf) & (grupo[columna] <= lim_sup)]
+        limpio.append(grupo_filtrado)
+    return pd.concat(limpio, ignore_index=True)
 
 # === Filtrado ===
 def aplicar_filtros(df: pd.DataFrame, tipo_centro: Optional[str], centro: Optional[str]) -> pd.DataFrame:
@@ -69,7 +73,7 @@ def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("T
     if df_filtrado.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos disponibles."})
 
-    df_promedio = quitar_outliers_promedio(df_filtrado.copy(), "gasto_gasolina")
+    df_promedio = quitar_outliers_grupo_mes(df_filtrado.copy(), "gasto_gasolina")
 
     return {
         "Kilómetros recorridos": f"{df_filtrado['distancia_km'].sum():,.0f} km",
@@ -83,7 +87,7 @@ def obtener_kpis(tipo_centro: str = Query(...), centro: Optional[str] = Query("T
 @app.get("/charts/gasolina")
 def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
     df = aplicar_filtros(df_total, tipo_centro, centro)
-    df = quitar_outliers_promedio(df, "gasto_gasolina")
+    df = quitar_outliers_grupo_mes(df, "gasto_gasolina")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
@@ -100,10 +104,10 @@ def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Op
 @app.get("/charts/co2")
 def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] = Query("Todos")):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = quitar_outliers_grupo_mes(df, "co2_emitido")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df = quitar_outliers_promedio(df, "co2_emitido")
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     return resumen.to_dict(orient="records")
 
@@ -111,10 +115,10 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), centro: Optional[str] 
 @app.get("/charts/distancia")
 def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: Optional[str] = Query("Agrupadas"), centro: Optional[str] = Query("Todos")):
     df = aplicar_filtros(df_total, tipo_centro, centro)
+    df = quitar_outliers_grupo_mes(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    df = quitar_outliers_promedio(df, "distancia_km")
     bins = pd.cut(df["distancia_km"], bins=10)
     df["bin"] = bins
     df["distancia_centro"] = df["bin"].apply(lambda r: round((r.left + r.right) / 2))
@@ -143,15 +147,15 @@ def calcular_promedios_generales():
     def promedio_mensual_post_iqr(df: pd.DataFrame, columna: str):
         promedios = []
         for mes, grupo in df.groupby("mes"):
-            limpio = quitar_outliers_promedio(grupo, columna)
+            limpio = quitar_outliers_grupo_mes(grupo, columna)
             total = limpio[columna].sum()
             promedios.append(total)
         return sum(promedios) / len(promedios)
 
     return {
         "distancia": {
-            "Nuevos": quitar_outliers_promedio(df_nuevos, "distancia_km")["distancia_km"].mean(),
-            "Viejos": quitar_outliers_promedio(df_viejos, "distancia_km")["distancia_km"].mean()
+            "Nuevos": quitar_outliers_grupo_mes(df_nuevos, "distancia_km")["distancia_km"].mean(),
+            "Viejos": quitar_outliers_grupo_mes(df_viejos, "distancia_km")["distancia_km"].mean()
         },
         "gasto_gasolina": {
             "Nuevos": promedio_mensual_post_iqr(df_nuevos, "gasto_gasolina"),
