@@ -45,13 +45,10 @@ df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Outliers ===
+# === Outliers usando percentiles 5% - 95% ===
 def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
-    q1 = df[columna].quantile(0.25)
-    q3 = df[columna].quantile(0.75)
-    iqr = q3 - q1
-    lim_inf = q1 - 1.5 * iqr
-    lim_sup = q3 + 1.5 * iqr
+    lim_inf = df[columna].quantile(0.05)
+    lim_sup = df[columna].quantile(0.95)
     return df[(df[columna] >= lim_inf) & (df[columna] <= lim_sup)]
 
 # === Filtrado ===
@@ -153,5 +150,4 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     df = df_total[df_total["tipo_centro"] == tipo_centro]
     centros = df["nombre_centro"].dropna().unique().tolist() if tipo_centro == "Nuevos" else []
     return {"centros": centros}
-
 
