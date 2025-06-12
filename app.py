@@ -27,25 +27,18 @@ def estandarizar(df: pd.DataFrame, tipo: str) -> pd.DataFrame:
         "costo_gasolina": "gasto_gasolina",
         "emisiones_co2": "co2_emitido"
     })
-
     df["fecha_entrega"] = pd.to_datetime(df["fecha_entrega"], format="%d/%m/%y", errors="coerce")
     df["mes"] = df["fecha_entrega"].dt.strftime("%b %Y")
-
-    columnas = [
-        "fecha_entrega", "mes", "distancia_km", "gasto_gasolina",
-        "co2_emitido", "tipo_centro", "grupo_ruta"
-    ]
-
+    columnas = ["fecha_entrega", "mes", "distancia_km", "gasto_gasolina", "co2_emitido", "tipo_centro", "grupo_ruta"]
     if tipo == "Nuevos":
         columnas += ["centro", "nombre_centro"]
-
     return df[columnas].dropna(subset=["fecha_entrega"])
 
 df_nuevos = estandarizar(df_nuevos, "Nuevos")
 df_viejos = estandarizar(df_viejos, "Viejos")
 df_total = pd.concat([df_nuevos, df_viejos], ignore_index=True)
 
-# === Outliers usando percentiles 5% - 95% ===
+# === Outliers usando percentiles 5%-95% ===
 def quitar_outliers(df: pd.DataFrame, columna: str) -> pd.DataFrame:
     q5 = df[columna].quantile(0.05)
     q95 = df[columna].quantile(0.95)
@@ -150,4 +143,3 @@ def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     df = df_total[df_total["tipo_centro"] == tipo_centro]
     centros = df["nombre_centro"].dropna().unique().tolist() if tipo_centro == "Nuevos" else []
     return {"centros": centros}
-
