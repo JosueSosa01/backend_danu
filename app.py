@@ -133,10 +133,9 @@ def grafica_distancia(
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    # Forzar bins: 600 km para general, 200 km para centro individual
-    if:
-        df = df[df["distancia_km"] <= 600]
-        bins = list(range(0, 601, 100))
+    # Forzar bins: 600 km fijo (visual)
+    df = df[df["distancia_km"] <= 600]
+    bins = list(range(0, 601, 100))
 
     df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
@@ -146,9 +145,10 @@ def grafica_distancia(
     else:
         resumen = df.groupby(["distancia_centro", "tipo_centro"]).size().reset_index(name="frecuencia")
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
-        resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")  # ✅ Etiqueta
+        resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")
 
     return resumen.to_dict(orient="records")
+
 
 
 
