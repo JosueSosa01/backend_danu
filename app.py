@@ -125,18 +125,8 @@ def grafica_distancia(tipo_centro: Optional[str] = Query(None), visualizacion: O
     df = quitar_outliers(df, "distancia_km")
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
-        
-        if centro == "Todos":
-            bins = list(range(0, 801, 100))
-        else:
-            min_val = df["distancia_km"].min()
-            max_val = df["distancia_km"].max()
-            step = 100
-            bins = list(range(0, int(max_val + step), step))
-        if min_val > 0 and min_val < 100:
-            bins = [0] + bins  # asegura incluir los menores a 100
 
-    df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
+    df["distancia_centro"] = pd.cut(df["distancia_km"], bins=10).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
         resumen = df.groupby(["distancia_centro", "nombre_centro"]).size().reset_index(name="frecuencia")
