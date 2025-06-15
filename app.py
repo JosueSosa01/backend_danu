@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pandas as pd
 from typing import Optional
+import os
+import uvicorn
 
 app = FastAPI(title="Dashboard Nuevo León")
 
@@ -105,7 +107,7 @@ def grafica_gasolina(tipo_centro: Optional[str] = Query(None), visualizacion: Op
     else:
         resumen = df.groupby(["mes", "tipo_centro"])["gasto_gasolina"].sum().reset_index()
         resumen = resumen.rename(columns={"tipo_centro": "grupo"})
-        resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")  # ✅ Etiqueta
+        resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")
 
     return resumen.to_dict(orient="records")
 
@@ -118,7 +120,7 @@ def grafica_co2(tipo_centro: Optional[str] = Query(None), visualizacion: Optiona
 
     resumen = df.groupby(["mes", "tipo_centro"])["co2_emitido"].sum().reset_index()
     resumen = resumen.rename(columns={"tipo_centro": "grupo"})
-    resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")  # ✅ Etiqueta
+    resumen["grupo"] = resumen["grupo"].replace("Viejos", "Antiguos")
 
     return resumen.to_dict(orient="records")
 
@@ -133,10 +135,8 @@ def grafica_distancia(
     if df.empty:
         return JSONResponse(status_code=404, content={"error": "No hay datos."})
 
-    # Forzar bins: 600 km fijo (visual)
     df = df[df["distancia_km"] <= 600]
     bins = list(range(0, 601, 100))
-
     df["distancia_centro"] = pd.cut(df["distancia_km"], bins=bins).apply(lambda r: round((r.left + r.right) / 2))
 
     if tipo_centro == "Nuevos" and visualizacion == "Desagrupadas":
@@ -149,14 +149,15 @@ def grafica_distancia(
 
     return resumen.to_dict(orient="records")
 
-
-
-
-
-
 # === Centros ===
 @app.get("/centros")
 def obtener_centros(tipo_centro: Optional[str] = Query("Nuevos")):
     df = df_total[df_total["tipo_centro"] == tipo_centro]
     centros = df["nombre_centro"].dropna().unique().tolist() if tipo_centro == "Nuevos" else []
     return {"centros": centros}
+
+# === Inicia Uvicorn solo si se ejecuta directamente (Render) ===
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
+
